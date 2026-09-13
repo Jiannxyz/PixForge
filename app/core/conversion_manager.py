@@ -31,6 +31,7 @@ class ConversionManager:
         options: ConversionOptions,
         *,
         cancel_event: Event | None = None,
+        job_started: ProgressCallback | None = None,
         progress: ProgressCallback | None = None,
         max_workers: int | None = None,
     ) -> list[ConversionResult]:
@@ -52,8 +53,14 @@ class ConversionManager:
                 )
                 job.status = FileStatus.SKIPPED
                 job.result = skipped
+                if progress:
+                    progress(job)
                 return skipped
+
             job.status = FileStatus.CONVERTING
+            if job_started:
+                job_started(job)
+
             result = self.converter.convert(job.source_path, options)
             job.result = result
             job.status = FileStatus.COMPLETED if result.success else FileStatus.FAILED
@@ -72,6 +79,8 @@ class ConversionManager:
                     )
                     job.status = FileStatus.SKIPPED
                     job.result = skipped
+                    if progress:
+                        progress(job)
                     results.append(skipped)
                     continue
                 results.append(run_job(job))
