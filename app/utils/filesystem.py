@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.formats import preferred_extension
+from app.formats import is_supported_extension, preferred_extension
 from app.models import ConversionOptions, NamingMode
 
 _UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -46,6 +46,23 @@ def unique_path(directory: Path, stem: str, extension: str, overwrite: bool) -> 
         index += 1
         if index > 100_000:
             raise OSError("Could not allocate a unique output filename")
+
+
+def collect_image_paths(root: Path, recursive: bool = False) -> list[Path]:
+    """Return supported image files in a folder (or a single file)."""
+    if root.is_file():
+        return [root.resolve()] if is_supported_extension(root) else []
+    if not root.is_dir():
+        return []
+    iterator = root.rglob("*") if recursive else root.glob("*")
+    found: list[Path] = []
+    for path in iterator:
+        try:
+            if path.is_file() and is_supported_extension(path):
+                found.append(path.resolve())
+        except OSError:
+            continue
+    return sorted(set(found))
 
 
 def build_output_path(source: Path, options: ConversionOptions) -> Path:
