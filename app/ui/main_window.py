@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from app.config import APP_NAME, APP_ORG, APP_VERSION, LOGO_TRANSPARENT_PATH
 from app.formats import INPUT_EXTENSIONS
 from app.models import ConversionOptions, ConversionResult, FileStatus
+from app.ui.about_dialog import AboutDialog
 from app.ui.drop_zone import DropZone
 from app.ui.file_list import FileQueueWidget
 from app.ui.output_section import OutputSection
@@ -152,6 +153,11 @@ class MainWindow(QMainWindow):
         app_bar_layout.addLayout(title_box)
 
         app_bar_layout.addStretch()
+
+        self._about_btn = QPushButton("ℹ  About", self)
+        self._about_btn.setFixedHeight(32)
+        self._about_btn.clicked.connect(self._open_about)
+        app_bar_layout.addWidget(self._about_btn)
 
         self._settings_btn = QPushButton("⚙  Settings", self)
         self._settings_btn.setFixedHeight(32)
@@ -291,6 +297,9 @@ class MainWindow(QMainWindow):
         default_folder = self._settings.value("general/default_output_dir", "")
         if default_folder and Path(default_folder).exists():
             self._output_section.set_output_dir(Path(default_folder))
+
+    def _open_about(self) -> None:
+        AboutDialog(self).exec()
 
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self)
