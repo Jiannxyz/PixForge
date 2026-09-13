@@ -5,6 +5,7 @@ import pytest
 
 from PySide6.QtCore import Qt
 from app.models import ConversionOptions, ConversionResult, FileStatus
+from app.ui.about_dialog import AboutDialog
 from app.ui.file_list import FileQueueWidget
 from app.ui.main_window import ErrorViewerDialog, MainWindow
 from app.ui.output_section import OutputSection
@@ -59,6 +60,12 @@ def test_error_viewer_dialog(qapp, tmp_path):
     res = ConversionResult(success=False, input_path=tmp_path / "fail.png", error="Corrupt header")
     dlg = ErrorViewerDialog([res])
     assert dlg.windowTitle().startswith("PixForge")
+
+
+def test_about_dialog(qapp):
+    dlg = AboutDialog()
+    assert "PixForge" in dlg.windowTitle()
+    assert bool(dlg.windowFlags() & Qt.WindowType.WindowCloseButtonHint)
 
 
 def test_theme_stylesheets():
