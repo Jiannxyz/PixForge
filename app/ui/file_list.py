@@ -329,12 +329,12 @@ class FileQueueWidget(QWidget):
         icon = QLabel(w)
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if UPLOAD_IMAGE_LOGO_PATH.exists():
-                    pix = QPixmap(str(UPLOAD_IMAGE_LOGO_PATH)).scaled(
-                        48, 48,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    icon.setPixmap(pix)
+            pix = QPixmap(str(UPLOAD_IMAGE_LOGO_PATH)).scaled(
+                48, 48,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            icon.setPixmap(pix)
         else:
             icon.setText("🖼")
             icon.setStyleSheet("font-size: 28px;")

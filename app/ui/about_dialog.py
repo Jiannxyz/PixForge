@@ -26,7 +26,9 @@ class AboutDialog(QDialog):
         self.setWindowTitle(f"About {APP_NAME}")
         self.setFixedSize(420, 340)
         self.setWindowFlags(
-            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
+            Qt.WindowType.Dialog
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
         )
         if LOGO_TRANSPARENT_PATH.exists():
             self.setWindowIcon(QIcon(str(LOGO_TRANSPARENT_PATH)))
