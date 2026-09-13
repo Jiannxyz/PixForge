@@ -151,8 +151,29 @@ class FileQueueWidget(QWidget):
     queue_changed = Signal(int)  # total count
     all_cleared = Signal()
 
+class AddResult(int):
+    """Integer subclass returning added count, with duplicates attribute."""
+
+    added: int
+    duplicates: int
+
+    def __new__(cls, added: int, duplicates: int = 0):
+        obj = super().__new__(cls, added)
+        obj.added = added
+        obj.duplicates = duplicates
+        return obj
+
+
+class FileQueueWidget(QWidget):
+    """Queue list widget managing file rows, selection, filtering, and thumbnail requests."""
+
+    queue_changed = Signal(int)  # total count
+    all_cleared = Signal()
+    files_dropped = Signal(list)
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setAcceptDrops(True)
         self._path_map: dict[Path, tuple[QListWidgetItem, FileQueueRow]] = {}
         self.thumbnail_pool = QThreadPool()
         self.thumbnail_pool.setMaxThreadCount(3)
@@ -203,6 +224,18 @@ class FileQueueWidget(QWidget):
 
         self._update_ui_state()
 
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls() if url.toLocalFile()]
+        if paths:
+            self.files_dropped.emit(paths)
+        event.acceptProposedAction()
+
     @property
     def count(self) -> int:
         return len(self._path_map)
@@ -210,12 +243,16 @@ class FileQueueWidget(QWidget):
     def get_all_paths(self) -> list[Path]:
         return list(self._path_map.keys())
 
-    def add_paths(self, paths: list[Path]) -> int:
-        """Add unique paths to the queue. Returns the number of newly added files."""
+    def add_paths(self, paths: list[Path]) -> AddResult:
+        """Add unique paths to the queue. Returns AddResult(added_count, duplicates_skipped)."""
         added_count = 0
+        duplicates_count = 0
         for raw_path in paths:
             path = Path(raw_path).resolve()
-            if path in self._path_map or not path.is_file():
+            if not path.is_file():
+                continue
+            if path in self._path_map:
+                duplicates_count += 1
                 continue
 
             item = QListWidgetItem(self.list_widget)
@@ -236,7 +273,7 @@ class FileQueueWidget(QWidget):
         if added_count > 0:
             self._update_ui_state()
             self.queue_changed.emit(self.count)
-        return added_count
+        return AddResult(added_count, duplicates_count)
 
     def remove_path(self, path: Path) -> None:
         target = Path(path).resolve()

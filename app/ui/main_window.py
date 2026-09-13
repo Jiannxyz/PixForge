@@ -130,6 +130,7 @@ class MainWindow(QMainWindow):
         # File Queue Widget
         self.file_queue = FileQueueWidget()
         self.file_queue.queue_changed.connect(self._on_queue_changed)
+        self.file_queue.files_dropped.connect(self._handle_files_dropped)
         main_layout.addWidget(self.file_queue, stretch=1)
 
         # Output Settings Section
@@ -221,11 +222,19 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._load_persisted_settings()
 
+    def _notify_added(self, res) -> None:
+        dupes = getattr(res, "duplicates", 0)
+        if dupes > 0:
+            count = int(res)
+            msg = f"Added {count} image{'s' if count != 1 else ''} ({dupes} duplicate{'s' if dupes != 1 else ''} skipped)"
+            self.status_info_label.setText(msg)
+
     def _handle_add_images(self) -> None:
         filter_str = file_dialog_filter()
         paths, _ = QFileDialog.getOpenFileNames(self, "Select Images to Convert", "", filter_str)
         if paths:
-            self.file_queue.add_paths([Path(p) for p in paths])
+            res = self.file_queue.add_paths([Path(p) for p in paths])
+            self._notify_added(res)
 
     def _handle_add_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select Folder of Images")
@@ -239,7 +248,8 @@ class MainWindow(QMainWindow):
                     f"No supported image files were found in:\n{folder}",
                 )
                 return
-            self.file_queue.add_paths(image_paths)
+            res = self.file_queue.add_paths(image_paths)
+            self._notify_added(res)
 
     def _handle_files_dropped(self, raw_paths: list[Path]) -> None:
         recursive = self.drop_zone.include_subfolders
@@ -251,7 +261,8 @@ class MainWindow(QMainWindow):
                 all_images.extend(collect_image_paths(path, recursive=False))
 
         if all_images:
-            self.file_queue.add_paths(all_images)
+            res = self.file_queue.add_paths(all_images)
+            self._notify_added(res)
 
     def _on_queue_changed(self, count: int) -> None:
         has_items = count > 0
