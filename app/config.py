@@ -13,6 +13,7 @@ RESOURCES_DIR = BASE_DIR / "resources"
 ICONS_DIR = RESOURCES_DIR / "icons"
 LOGO_TRANSPARENT_PATH = ICONS_DIR / "PixForgeLogoTransparent.png"
 LOGO_BACKGROUND_PATH = ICONS_DIR / "PixForgeLogoWithBackground.png"
+UPLOAD_IMAGE_LOGO_PATH = ICONS_DIR / "UploadimageLogo.png"
 
 # Worker thread count for batch conversion
 MAX_WORKERS: int = min(4, os.cpu_count() or 2)

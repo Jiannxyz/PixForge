@@ -7,6 +7,16 @@ QSS constraints:
 """
 from __future__ import annotations
 
+from app.config import ICONS_DIR
+
+_ARROW_DARK = str(ICONS_DIR / "dropdown_arrow_dark.png").replace("\\", "/")
+_ARROW_LIGHT = str(ICONS_DIR / "dropdown_arrow_light.png").replace("\\", "/")
+_SPIN_UP_DARK = str(ICONS_DIR / "spin_up_dark.png").replace("\\", "/")
+_SPIN_DN_DARK = str(ICONS_DIR / "spin_down_dark.png").replace("\\", "/")
+_SPIN_UP_LIGHT = str(ICONS_DIR / "spin_up_light.png").replace("\\", "/")
+_SPIN_DN_LIGHT = str(ICONS_DIR / "spin_down_light.png").replace("\\", "/")
+_CHECK_ICON = str(ICONS_DIR / "checkbox_check.png").replace("\\", "/")
+
 # ---------------------------------------------------------------------------
 # Shared colour tokens
 # ---------------------------------------------------------------------------
@@ -38,6 +48,7 @@ LIGHT_INPUT_BG = "#ffffff"
 def _build_stylesheet(
     bg: str, surface: str, card: str, accent: str, accent_hover: str,
     text: str, muted: str, border: str, input_bg: str,
+    dropdown_arrow: str, spin_up: str, spin_down: str, check_icon: str,
 ) -> str:
     return f"""
 /* ── Base ─────────────────────────────────────────────────────────── */
@@ -215,19 +226,65 @@ QLineEdit, QSpinBox, QComboBox {{
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
     border-color: {accent};
 }}
+QComboBox {{
+    padding-right: 28px;
+}}
 QComboBox::drop-down {{
-    border: none;
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
     width: 24px;
+    border-left: none;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
 }}
 QComboBox::down-arrow {{
-    width: 10px;
-    height: 10px;
+    image: url("{dropdown_arrow}");
+    width: 12px;
+    height: 12px;
 }}
 QComboBox QAbstractItemView {{
     background-color: {surface};
     color: {text};
     border: 1px solid {border};
     selection-background-color: {accent};
+    selection-color: #ffffff;
+    padding: 4px;
+}}
+QSpinBox {{
+    padding-right: 22px;
+}}
+QSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid {border};
+    border-bottom: 1px solid {border};
+    border-top-right-radius: 5px;
+    background-color: {surface};
+}}
+QSpinBox::up-button:hover {{
+    background-color: {card};
+}}
+QSpinBox::up-arrow {{
+    image: url("{spin_up}");
+    width: 9px;
+    height: 9px;
+}}
+QSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 18px;
+    border-left: 1px solid {border};
+    border-bottom-right-radius: 5px;
+    background-color: {surface};
+}}
+QSpinBox::down-button:hover {{
+    background-color: {card};
+}}
+QSpinBox::down-arrow {{
+    image: url("{spin_down}");
+    width: 9px;
+    height: 9px;
 }}
 
 /* ── Sliders ─────────────────────────────────────────────────────────── */
@@ -302,18 +359,28 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
 /* ── Checkboxes ─────────────────────────────────────────────────────── */
 QCheckBox {{
     color: {text};
-    spacing: 6px;
+    spacing: 8px;
+    font-size: 13px;
 }}
 QCheckBox::indicator {{
-    width: 16px;
-    height: 16px;
-    border: 1px solid {border};
-    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid {border};
+    border-radius: 5px;
     background-color: {input_bg};
+}}
+QCheckBox::indicator:hover {{
+    border-color: {accent};
+    background-color: {card};
 }}
 QCheckBox::indicator:checked {{
     background-color: {accent};
     border-color: {accent};
+    image: url("{check_icon}");
+}}
+QCheckBox::indicator:checked:hover {{
+    background-color: {accent_hover};
+    border-color: {accent_hover};
 }}
 
 /* ── Group Box ─────────────────────────────────────────────────────── */
@@ -394,6 +461,10 @@ DARK_STYLESHEET = _build_stylesheet(
     accent=DARK_ACCENT, accent_hover=DARK_ACCENT_HOVER,
     text=DARK_TEXT, muted=DARK_MUTED, border=DARK_BORDER,
     input_bg=DARK_INPUT_BG,
+    dropdown_arrow=_ARROW_DARK,
+    spin_up=_SPIN_UP_DARK,
+    spin_down=_SPIN_DN_DARK,
+    check_icon=_CHECK_ICON,
 )
 
 # Light theme
@@ -402,6 +473,10 @@ LIGHT_STYLESHEET = _build_stylesheet(
     accent=LIGHT_ACCENT, accent_hover=LIGHT_ACCENT_HOVER,
     text=LIGHT_TEXT, muted=LIGHT_MUTED, border=LIGHT_BORDER,
     input_bg=LIGHT_INPUT_BG,
+    dropdown_arrow=_ARROW_LIGHT,
+    spin_up=_SPIN_UP_LIGHT,
+    spin_down=_SPIN_DN_LIGHT,
+    check_icon=_CHECK_ICON,
 )
 
 # Default export

@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import List
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QPushButton, QSizePolicy, QVBoxLayout,
 )
 
+from app.config import UPLOAD_IMAGE_LOGO_PATH
 from app.formats import INPUT_EXTENSIONS
 
 log = logging.getLogger(__name__)
@@ -43,9 +44,18 @@ class DropZone(QFrame):
         layout.setSpacing(8)
 
         # Icon + primary text
-        icon = QLabel("🖼", self)
+        icon = QLabel(self)
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setStyleSheet("font-size: 28px;")
+        if UPLOAD_IMAGE_LOGO_PATH.exists():
+            pix = QPixmap(str(UPLOAD_IMAGE_LOGO_PATH)).scaled(
+                48, 48,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            icon.setPixmap(pix)
+        else:
+            icon.setText("🖼")
+            icon.setStyleSheet("font-size: 28px;")
 
         hint = QLabel("Drop images or folders here", self)
         hint.setObjectName("dropHint")

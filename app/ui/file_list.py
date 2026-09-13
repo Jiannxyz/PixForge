@@ -253,7 +253,7 @@ class FileQueueWidget(QWidget):
         # ── Header bar ──────────────────────────────────────────────
         header = QFrame(self)
         header.setObjectName("card")
-        header.setStyleSheet("border-radius: 8px 8px 0 0; border-bottom: none;")
+        header.setStyleSheet("border-radius: 8px 8px 0 0;")
         h_layout = QHBoxLayout(header)
         h_layout.setContentsMargins(12, 8, 12, 8)
         h_layout.setSpacing(10)
