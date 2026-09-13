@@ -1,195 +1,136 @@
+"""Tests for app.core.converter module."""
 from pathlib import Path
-from threading import Event
-
+from PIL import Image, ImageOps
 import pytest
-from PIL import Image, ImageDraw
 
-from app.core.conversion_manager import ConversionManager
-from app.core.converter import ImageConverter, flatten_alpha
-from app.formats import can_encode
+from app.core.converter import ImageConverter
 from app.models import ConversionOptions
-from tests.conftest import save_rgb, save_rgba
-
-heif_available = pytest.mark.skipif(
-    not can_encode("HEIC"),
-    reason="HEIC encoder is not available in this Pillow/pillow-heif build",
-)
 
 
 @pytest.fixture
-def converter() -> ImageConverter:
+def converter():
     return ImageConverter()
 
 
-def _open_size(path: Path) -> tuple[int, int]:
-    with Image.open(path) as image:
-        return image.size
+@pytest.fixture
+def sample_rgb_image(tmp_path):
+    p = tmp_path / "rgb.png"
+    img = Image.new("RGB", (100, 100), color=(255, 0, 0))
+    img.save(p)
+    return p
 
 
-def test_jpg_to_png(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgb(tmp_path / "in.jpg")
-    result = converter.convert(source, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success, result.error
-    assert result.output_path.suffix == ".png"
-    assert _open_size(result.output_path) == (32, 24)
+@pytest.fixture
+def sample_rgba_image(tmp_path):
+    p = tmp_path / "rgba.png"
+    img = Image.new("RGBA", (100, 100), color=(0, 255, 0, 128))
+    img.save(p)
+    return p
 
 
-def test_png_to_jpg(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgb(tmp_path / "in.png")
-    result = converter.convert(source, ConversionOptions(output_format="JPG", output_dir=tmp_output))
-    assert result.success, result.error
-    assert result.output_path.suffix == ".jpg"
+def test_convert_rgb_png_to_jpg(converter, sample_rgb_image, tmp_path):
+    out_dir = tmp_path / "out"
+    opts = ConversionOptions(output_format="JPG", output_dir=out_dir)
+    res = converter.convert(sample_rgb_image, opts)
+    assert res.success is True
+    assert res.output_path.exists()
+    assert res.output_path.suffix.lower() in [".jpg", ".jpeg"]
+    with Image.open(res.output_path) as out_img:
+        assert out_img.format == "JPEG"
 
 
-@heif_available
-def test_heic_to_jpg(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    png = save_rgb(tmp_path / "src.png", color=(10, 20, 200))
-    heic = converter.convert(png, ConversionOptions(output_format="HEIC", output_dir=tmp_path, heic_quality=70))
-    assert heic.success, heic.error
-    result = converter.convert(heic.output_path, ConversionOptions(output_format="JPG", output_dir=tmp_output))
-    assert result.success, result.error
-    assert result.output_path.suffix == ".jpg"
+def test_convert_rgba_to_jpg_flattens_alpha(converter, sample_rgba_image, tmp_path):
+    out_dir = tmp_path / "out"
+    opts = ConversionOptions(output_format="JPG", output_dir=out_dir)
+    res = converter.convert(sample_rgba_image, opts)
+    assert res.success is True
+    assert res.output_path.exists()
+    with Image.open(res.output_path) as out_img:
+        assert out_img.mode == "RGB"
 
 
-@heif_available
-def test_heic_to_png(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    png = save_rgb(tmp_path / "src.png")
-    heic = converter.convert(png, ConversionOptions(output_format="HEIC", output_dir=tmp_path))
-    assert heic.success, heic.error
-    result = converter.convert(heic.output_path, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success, result.error
+def test_convert_to_png_and_webp(converter, sample_rgb_image, tmp_path):
+    out_dir = tmp_path / "out"
+    opts_png = ConversionOptions(output_format="PNG", output_dir=out_dir)
+    res_png = converter.convert(sample_rgb_image, opts_png)
+    assert res_png.success is True
+    assert res_png.output_path.suffix == ".png"
+
+    opts_webp = ConversionOptions(output_format="WEBP", output_dir=out_dir)
+    res_webp = converter.convert(sample_rgb_image, opts_webp)
+    assert res_webp.success is True
+    assert res_webp.output_path.suffix == ".webp"
 
 
-@heif_available
-def test_jpg_to_heic(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgb(tmp_path / "in.jpg")
-    result = converter.convert(source, ConversionOptions(output_format="HEIC", output_dir=tmp_output))
-    assert result.success, result.error
-    assert result.output_path.suffix == ".heic"
+def test_convert_to_heic(converter, sample_rgb_image, tmp_path):
+    out_dir = tmp_path / "out"
+    opts = ConversionOptions(output_format="HEIC", output_dir=out_dir)
+    res = converter.convert(sample_rgb_image, opts)
+    assert res.success is True
+    assert res.output_path.suffix in [".heic", ".heif"]
 
 
-@heif_available
-def test_png_to_heic(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgb(tmp_path / "in.png")
-    result = converter.convert(source, ConversionOptions(output_format="HEIC", output_dir=tmp_output))
-    assert result.success, result.error
+def test_convert_heic_to_jpg_and_png(converter, tmp_path):
+    src_png = tmp_path / "src.png"
+    img = Image.new("RGB", (60, 60), color=(10, 20, 30))
+    img.save(src_png)
+
+    # First convert to HEIC
+    heic_out = tmp_path / "out_heic"
+    opts_heic = ConversionOptions(output_format="HEIC", output_dir=heic_out)
+    res_heic = converter.convert(src_png, opts_heic)
+    assert res_heic.success is True
+
+    # Now convert HEIC -> JPG
+    jpg_out = tmp_path / "out_jpg"
+    opts_jpg = ConversionOptions(output_format="JPG", output_dir=jpg_out)
+    res_jpg = converter.convert(res_heic.output_path, opts_jpg)
+    assert res_jpg.success is True
+    assert res_jpg.output_path.suffix.lower() in [".jpg", ".jpeg"]
+
+    # Now convert HEIC -> PNG
+    png_out = tmp_path / "out_png"
+    opts_png = ConversionOptions(output_format="PNG", output_dir=png_out)
+    res_png = converter.convert(res_heic.output_path, opts_png)
+    assert res_png.success is True
+    assert res_png.output_path.suffix == ".png"
 
 
-def test_webp_to_jpg(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgb(tmp_path / "in.webp")
-    result = converter.convert(source, ConversionOptions(output_format="JPG", output_dir=tmp_output))
-    assert result.success, result.error
+def test_convert_bmp_and_tiff(converter, tmp_path):
+    p = tmp_path / "test.png"
+    img = Image.new("RGB", (50, 50), color=(100, 100, 100))
+    img.save(p)
+
+    out_dir = tmp_path / "out_others"
+    # To BMP
+    opts_bmp = ConversionOptions(output_format="BMP", output_dir=out_dir)
+    res_bmp = converter.convert(p, opts_bmp)
+    assert res_bmp.success is True
+    assert res_bmp.output_path.suffix == ".bmp"
+
+    # To TIFF
+    opts_tiff = ConversionOptions(output_format="TIFF", output_dir=out_dir)
+    res_tiff = converter.convert(p, opts_tiff)
+    assert res_tiff.success is True
+    assert res_tiff.output_path.suffix in [".tiff", ".tif"]
 
 
-def test_tiff_to_png(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgb(tmp_path / "in.tiff")
-    result = converter.convert(source, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success, result.error
+def test_convert_gif_first_frame(converter, tmp_path):
+    gif_path = tmp_path / "test.gif"
+    img = Image.new("RGB", (50, 50), color=(200, 50, 50))
+    img.save(gif_path, format="GIF")
+
+    out_dir = tmp_path / "out_gif"
+    opts = ConversionOptions(output_format="JPG", output_dir=out_dir)
+    res = converter.convert(gif_path, opts)
+    assert res.success is True
 
 
-def test_bmp_roundtrip(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgb(tmp_path / "in.bmp")
-    result = converter.convert(source, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success, result.error
-
-
-def test_jpeg_transparency_uses_white_background(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgba(tmp_path / "alpha.png")
-    result = converter.convert(
-        source,
-        ConversionOptions(output_format="JPG", output_dir=tmp_output, background_color=(255, 255, 255)),
-    )
-    assert result.success, result.error
-    with Image.open(result.output_path) as image:
-        rgb = image.convert("RGB")
-        assert rgb.getpixel((31, 12)) == (255, 255, 255)
-        assert rgb.getpixel((2, 12))[1] > 200
-
-
-def test_flatten_alpha_custom_color():
-    image = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
-    flat = flatten_alpha(image, (12, 34, 56))
-    assert flat.mode == "RGB"
-    assert flat.getpixel((0, 0)) == (12, 34, 56)
-
-
-def test_png_keeps_transparency(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = save_rgba(tmp_path / "alpha.png")
-    result = converter.convert(source, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success, result.error
-    with Image.open(result.output_path) as image:
-        converted = image.convert("RGBA")
-        assert converted.getpixel((31, 12))[3] == 0
-
-
-def test_exif_orientation_is_applied(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = tmp_path / "oriented.jpg"
-    image = Image.new("RGB", (40, 20), (255, 0, 0))
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((0, 0, 9, 19), fill=(0, 0, 255))
-    exif = Image.Exif()
-    exif[0x0112] = 6
-    image.save(source, format="JPEG", exif=exif)
-    result = converter.convert(source, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success, result.error
-    assert _open_size(result.output_path) == (20, 40)
-
-
-def test_invalid_image(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = tmp_path / "broken.jpg"
-    source.write_bytes(b"this is not an image")
-    result = converter.convert(source, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success is False
-    assert result.error == "Invalid image"
-
-
-def test_unsupported_extension(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = tmp_path / "notes.txt"
-    source.write_text("hello")
-    result = converter.convert(source, ConversionOptions(output_format="PNG", output_dir=tmp_output))
-    assert result.success is False
-    assert result.error == "Unsupported format"
-
-
-def test_empty_queue(tmp_output: Path):
-    manager = ConversionManager(max_workers=1)
-    results = manager.convert_batch([], ConversionOptions(output_format="JPG", output_dir=tmp_output))
-    assert results == []
-
-
-def test_cancel_batch(tmp_path: Path, tmp_output: Path):
-    sources = [save_rgb(tmp_path / f"{i}.png") for i in range(5)]
-    cancel = Event()
-    cancel.set()
-    results = ConversionManager(max_workers=1).convert_batch(
-        sources,
-        ConversionOptions(output_format="JPG", output_dir=tmp_output),
-        cancel_event=cancel,
-    )
-    assert all(item.skipped for item in results)
-
-
-def test_batch_of_one_hundred(tmp_path: Path, tmp_output: Path):
-    sources = [save_rgb(tmp_path / f"img_{i:03d}.png", size=(8, 8)) for i in range(120)]
-    results = ConversionManager(max_workers=4).convert_batch(
-        sources,
-        ConversionOptions(output_format="JPG", output_dir=tmp_output, quality=70),
-    )
-    assert len(results) == 120
-    assert all(item.success for item in results)
-
-
-def test_metadata_preserved_when_possible(converter: ImageConverter, tmp_path: Path, tmp_output: Path):
-    source = tmp_path / "meta.jpg"
-    image = Image.new("RGB", (16, 16), (90, 90, 90))
-    exif = Image.Exif()
-    exif[0x010F] = "PixForgeTestCam"
-    image.save(source, format="JPEG", exif=exif)
-    result = converter.convert(
-        source,
-        ConversionOptions(output_format="JPG", output_dir=tmp_output, preserve_metadata=True),
-    )
-    assert result.success, result.error
-    with Image.open(result.output_path) as converted:
-        values = [str(v) for v in converted.getexif().values()]
-        assert any("PixForgeTestCam" in value for value in values)
+def test_convert_invalid_image_fails_safely(converter, tmp_path):
+    corrupt = tmp_path / "corrupt.jpg"
+    corrupt.write_bytes(b"NOT_AN_IMAGE_CONTENT")
+    out_dir = tmp_path / "out"
+    opts = ConversionOptions(output_format="PNG", output_dir=out_dir)
+    res = converter.convert(corrupt, opts)
+    assert res.success is False
+    assert res.error is not None

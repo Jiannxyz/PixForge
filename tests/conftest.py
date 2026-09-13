@@ -1,53 +1,23 @@
+"""Pytest configuration and session fixtures."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import os
-import pytest
-from PIL import Image
+import sys
 
+# Ensure offscreen rendering for Qt tests in CI / headless environments
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
+import pytest
+from PySide6.QtWidgets import QApplication
+from pillow_heif import register_heif_opener
+
+register_heif_opener()
 
 
 @pytest.fixture(scope="session")
 def qapp():
-    from PySide6.QtWidgets import QApplication
-
+    """Create a single shared QApplication instance for all UI tests."""
     app = QApplication.instance()
     if app is None:
-        app = QApplication([])
-    return app
-
-
-@pytest.fixture
-def tmp_output(tmp_path: Path) -> Path:
-    output = tmp_path / "out"
-    output.mkdir()
-    return output
-
-
-@pytest.fixture
-def options_factory(tmp_output: Path):
-    def factory(fmt: str = "PNG", **overrides) -> ConversionOptions:
-        values = {
-            "output_format": fmt,
-            "output_dir": tmp_output,
-        }
-        values.update(overrides)
-        return ConversionOptions(**values)
-
-    return factory
-
-
-def save_rgb(path: Path, size: tuple[int, int] = (32, 24), color=(220, 40, 40)) -> Path:
-    Image.new("RGB", size, color).save(path)
-    return path
-
-
-def save_rgba(path: Path, size: tuple[int, int] = (32, 24)) -> Path:
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
-    for x in range(16):
-        for y in range(size[1]):
-            image.putpixel((x, y), (0, 255, 0, 255))
-    image.save(path)
-    return path
+        app = QApplication(sys.argv)
+    yield app

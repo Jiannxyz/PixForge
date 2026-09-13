@@ -1,44 +1,23 @@
-"""Small platform helpers for later GUI use."""
-
+"""Cross-platform helper: open a folder in the native file manager."""
 from __future__ import annotations
 
+import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 
-
-def cpu_count(default: int = 4) -> int:
-    return os.cpu_count() or default
+log = logging.getLogger(__name__)
 
 
-def default_output_dir() -> Path:
-    pictures = Path.home() / "Pictures"
-    if pictures.is_dir():
-        return pictures / "PixForge"
-    return Path.home() / "PixForge"
-
-
-def is_windows() -> bool:
-    return sys.platform.startswith("win")
-
-
-def open_folder(path: Path | str) -> bool:
-    """Open a folder in the operating system's native file explorer."""
-    import subprocess
-
-    target = Path(path).resolve()
-    if not target.exists():
-        target.mkdir(parents=True, exist_ok=True)
-
+def open_folder(path: Path) -> None:
+    """Open *path* in the platform's native file explorer."""
     try:
-        if sys.platform.startswith("win"):
-            os.startfile(str(target))
-            return True
-        if sys.platform == "darwin":
-            subprocess.Popen(["open", str(target)])
-            return True
-        subprocess.Popen(["xdg-open", str(target)])
-        return True
-    except Exception:
-        return False
-
+        if sys.platform == "win32":
+            os.startfile(str(path))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not open folder %s: %s", path, exc)

@@ -1,135 +1,65 @@
-"""Background conversion workers for PySide6. Keeps the GUI thread non-blocking."""
-
+"""QThread-based batch conversion worker."""
 from __future__ import annotations
 
-import logging
-from collections.abc import Sequence
+import threading
 from pathlib import Path
-from threading import Event, Lock
+from typing import List
 
-from PySide6.QtCore import QObject, QRunnable, QThread, Signal
+from PySide6.QtCore import QThread, Signal
 
 from app.core.conversion_manager import ConversionManager
-from app.models import ConversionOptions, ConversionResult, FileStatus, ImageJob
-
-logger = logging.getLogger(__name__)
-
-
-class ConversionSignals(QObject):
-    started = Signal(str)
-    finished = Signal(object)
-
-
-class ConversionRunnable(QRunnable):
-    """Single-item runnable for QThreadPool execution."""
-
-    def __init__(
-        self,
-        source: Path,
-        options: ConversionOptions,
-        cancel_event: Event,
-        manager: ConversionManager,
-    ) -> None:
-        super().__init__()
-        self.source = Path(source)
-        self.options = options
-        self.cancel_event = cancel_event
-        self.manager = manager
-        self.signals = ConversionSignals()
-        self.setAutoDelete(True)
-
-    def run(self) -> None:
-        if self.cancel_event.is_set():
-            skipped = ConversionResult(
-                success=False,
-                source_path=self.source,
-                error="Cancelled",
-                skipped=True,
-            )
-            job = ImageJob(source_path=self.source, status=FileStatus.SKIPPED, result=skipped)
-            self.signals.finished.emit(job)
-            return
-
-        self.signals.started.emit(str(self.source))
-        result = self.manager.convert_one(self.source, self.options)
-        if result.skipped:
-            status = FileStatus.SKIPPED
-        elif result.success:
-            status = FileStatus.COMPLETED
-        else:
-            status = FileStatus.FAILED
-
-        job = ImageJob(source_path=self.source, status=status, result=result)
-        self.signals.finished.emit(job)
+from app.models import ConversionOptions, ConversionResult
 
 
 class ConversionBatchWorker(QThread):
-    """Background worker thread executing a batch of images without freezing the GUI."""
+    """
+    Runs ConversionManager.convert_batch() on a dedicated QThread.
 
-    job_started = Signal(str)  # source path string
-    job_finished = Signal(object)  # ImageJob
-    progress_updated = Signal(int, int)  # completed, total
-    batch_finished = Signal(list)  # list[ConversionResult]
+    Signals (all queued-connected to the GUI thread automatically):
+        job_started(path)            — emitted when a file begins converting
+        job_finished(result)         — emitted after each file completes/fails
+        progress_updated(done, total)— overall counter update
+        batch_finished(results)      — emitted when the full batch is done
+    """
+
+    job_started = Signal(Path)
+    job_finished = Signal(object)          # ConversionResult
+    progress_updated = Signal(int, int)    # done, total
+    batch_finished = Signal(list)          # List[ConversionResult]
 
     def __init__(
         self,
-        sources: Sequence[str | Path],
+        paths: List[Path],
         options: ConversionOptions,
-        manager: ConversionManager | None = None,
         max_workers: int | None = None,
-        parent: QObject | None = None,
+        parent=None,
     ) -> None:
         super().__init__(parent)
-        self.sources = [Path(s) for s in sources]
-        self.options = options
-        self.manager = manager or ConversionManager()
-        self.max_workers = max_workers
-        self.cancel_event = Event()
-        self._completed_count = 0
-        self._total_count = len(self.sources)
-        self._lock = Lock()
-
-    @property
-    def is_cancelled(self) -> bool:
-        return self.cancel_event.is_set()
+        self._paths = paths
+        self._options = options
+        self._max_workers = max_workers
+        self._cancel_event = threading.Event()
+        self._manager = ConversionManager()
+        self._lock = threading.Lock()
 
     def cancel(self) -> None:
-        """Signal background jobs to safely halt starting new conversions."""
-        self.cancel_event.set()
+        """Signal cancellation; currently-running jobs will finish naturally."""
+        self._cancel_event.set()
 
     def run(self) -> None:
-        if not self.sources:
-            self.batch_finished.emit([])
-            return
+        def _on_started(path: Path) -> None:
+            self.job_started.emit(path)
 
-        def on_job_started(job: ImageJob) -> None:
-            self.job_started.emit(str(job.source_path))
+        def _on_progress(result: ConversionResult, done: int, total: int) -> None:
+            self.job_finished.emit(result)
+            self.progress_updated.emit(done, total)
 
-        def on_job_progress(job: ImageJob) -> None:
-            with self._lock:
-                self._completed_count += 1
-                count = self._completed_count
-                self.job_finished.emit(job)
-                self.progress_updated.emit(count, self._total_count)
-
-        try:
-            results = self.manager.convert_batch(
-                self.sources,
-                self.options,
-                cancel_event=self.cancel_event,
-                job_started=on_job_started,
-                progress=on_job_progress,
-                max_workers=self.max_workers,
-            )
-        except Exception as exc:
-            logger.exception("Unexpected error in ConversionBatchWorker")
-            results = [
-                ConversionResult(
-                    success=False,
-                    source_path=path,
-                    error=str(exc) or "Unexpected error",
-                )
-                for path in self.sources
-            ]
-
+        results = self._manager.convert_batch(
+            paths=self._paths,
+            options=self._options,
+            cancel_event=self._cancel_event,
+            progress=_on_progress,
+            job_started=_on_started,
+            max_workers=self._max_workers,
+        )
         self.batch_finished.emit(results)

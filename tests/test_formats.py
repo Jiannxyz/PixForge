@@ -1,40 +1,44 @@
+"""Tests for app.formats module."""
 from app.formats import (
-    can_encode,
-    format_from_extension,
-    get_format,
-    is_supported_extension,
-    preferred_extension,
+    EXTENSION_TO_FORMAT,
+    INPUT_EXTENSIONS,
+    OUTPUT_FORMAT_KEYS,
+    SUPPORTED_FORMATS,
+    format_for_extension,
+    is_supported_input,
 )
 
 
-def test_jpg_and_jpeg_share_encoder():
-    jpg = get_format("JPG")
-    jpeg = get_format("jpeg")
-    assert jpg is not None
-    assert jpeg is not None
-    assert jpg.pillow_format == jpeg.pillow_format == "JPEG"
-    assert jpg.supports_alpha is False
+def test_supported_formats_contains_primary():
+    assert "JPG" in SUPPORTED_FORMATS
+    assert "PNG" in SUPPORTED_FORMATS
+    assert "WEBP" in SUPPORTED_FORMATS
+    assert "HEIC" in SUPPORTED_FORMATS
+    assert "BMP" in SUPPORTED_FORMATS
+    assert "TIFF" in SUPPORTED_FORMATS
+    assert "GIF" in SUPPORTED_FORMATS
 
 
-def test_extension_lookup():
-    assert format_from_extension("photo.HEIC").key in {"HEIC", "HEIF"}
-    assert format_from_extension("scan.tif").key == "TIFF"
-    assert is_supported_extension("a.png")
-    assert not is_supported_extension("notes.txt")
+def test_format_for_extension():
+    assert format_for_extension(".jpg") == "JPG"
+    assert format_for_extension(".jpeg") == "JPG"
+    assert format_for_extension(".png") == "PNG"
+    assert format_for_extension(".webp") == "WEBP"
+    assert format_for_extension(".heic") == "HEIC"
+    assert format_for_extension(".heif") == "HEIC"
+    assert format_for_extension(".unknown") is None
 
 
-def test_preferred_extensions():
-    assert preferred_extension("JPG") == ".jpg"
-    assert preferred_extension("HEIC") == ".heic"
-    assert preferred_extension("HEIF") == ".heif"
+def test_is_supported_input():
+    assert is_supported_input(".jpg") is True
+    assert is_supported_input(".HEIC") is True
+    assert is_supported_input(".png") is True
+    assert is_supported_input(".exe") is False
+    assert is_supported_input(".txt") is False
 
 
-def test_png_and_webp_support_alpha():
-    assert get_format("PNG").supports_alpha is True
-    assert get_format("WEBP").supports_alpha is True
-    assert get_format("BMP").supports_alpha is False
-
-
-def test_core_encoders_available():
-    for key in ("JPG", "PNG", "WEBP", "BMP", "TIFF"):
-        assert can_encode(key), f"{key} should be encodable with Pillow"
+def test_output_formats_exclude_gif():
+    assert "GIF" not in OUTPUT_FORMAT_KEYS
+    assert "JPG" in OUTPUT_FORMAT_KEYS
+    assert "PNG" in OUTPUT_FORMAT_KEYS
+    assert "WEBP" in OUTPUT_FORMAT_KEYS

@@ -1,77 +1,102 @@
-"""Safe output path and filename generation. Never overwrite unless asked."""
-
+"""Filesystem utilities: path building, collection, sanitisation."""
 from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import List
 
-from app.formats import is_supported_extension, preferred_extension
-from app.models import ConversionOptions, NamingMode
+from app.formats import INPUT_EXTENSIONS
+from app.models import NamingMode
+
+
+# ---------------------------------------------------------------------------
+# Path sanitisation
+# ---------------------------------------------------------------------------
 
 _UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def sanitize_filename_stem(stem: str) -> str:
-    cleaned = _UNSAFE_CHARS.sub("_", stem).strip(" .")
-    return cleaned or "image"
+    """Remove characters illegal on Windows/macOS from a filename stem."""
+    cleaned = _UNSAFE_CHARS.sub("_", stem).strip(". ")
+    # Collapse multiple consecutive underscores and strip them from ends
+    return re.sub(r"_+", "_", cleaned).strip("_")
 
 
-def is_inside_directory(path: Path, directory: Path) -> bool:
-    try:
-        path.resolve().relative_to(directory.resolve())
-        return True
-    except ValueError:
-        return False
+# ---------------------------------------------------------------------------
+# Output path construction
+# ---------------------------------------------------------------------------
 
+def build_output_path(
+    input_path: Path,
+    output_dir: Path,
+    output_format_key: str,
+    naming_mode: NamingMode = NamingMode.CONVERTED_SUFFIX,
+    custom_prefix: str = "",
+    overwrite: bool = False,
+) -> Path:
+    """
+    Build the destination path for a converted file.
+    If *overwrite* is False, appends a counter suffix to avoid collisions
+    with files that already exist on disk.
+    """
+    from app.formats import SUPPORTED_FORMATS
 
-def build_output_stem(source: Path, options: ConversionOptions) -> str:
-    stem = sanitize_filename_stem(source.stem)
-    if options.naming_mode is NamingMode.ORIGINAL:
-        return stem
-    if options.naming_mode is NamingMode.PREFIX:
-        prefix = sanitize_filename_stem(options.custom_prefix)
-        return f"{prefix}{stem}" if prefix else stem
-    return f"{stem}.converted"
+    fmt = SUPPORTED_FORMATS[output_format_key]
+    ext = fmt.extensions[0]  # Primary extension
 
+    stem = sanitize_filename_stem(input_path.stem)
 
-def unique_path(directory: Path, stem: str, extension: str, overwrite: bool) -> Path:
-    candidate = directory / f"{stem}{extension}"
+    if naming_mode == NamingMode.CONVERTED_SUFFIX:
+        out_stem = f"{stem}.converted"
+    elif naming_mode == NamingMode.KEEP_STEM:
+        out_stem = stem
+    else:  # CUSTOM_PREFIX
+        prefix = sanitize_filename_stem(custom_prefix) or "converted"
+        out_stem = f"{prefix}_{stem}"
+
+    candidate = output_dir / f"{out_stem}{ext}"
+
     if overwrite or not candidate.exists():
         return candidate
-    index = 1
+
+    return unique_path(candidate)
+
+
+def unique_path(path: Path) -> Path:
+    """
+    Return a path that does not currently exist by appending (1), (2), …
+    Checks filesystem existence only (no in-memory reservation).
+    """
+    if not path.exists():
+        return path
+
+    stem = path.stem
+    suffix = path.suffix
+    parent = path.parent
+    counter = 1
     while True:
-        candidate = directory / f"{stem} ({index}){extension}"
+        candidate = parent / f"{stem} ({counter}){suffix}"
         if not candidate.exists():
             return candidate
-        index += 1
-        if index > 100_000:
-            raise OSError("Could not allocate a unique output filename")
+        counter += 1
 
 
-def collect_image_paths(root: Path, recursive: bool = False) -> list[Path]:
-    """Return supported image files in a folder (or a single file)."""
-    if root.is_file():
-        return [root.resolve()] if is_supported_extension(root) else []
-    if not root.is_dir():
-        return []
-    iterator = root.rglob("*") if recursive else root.glob("*")
-    found: list[Path] = []
-    for path in iterator:
-        try:
-            if path.is_file() and is_supported_extension(path):
-                found.append(path.resolve())
-        except OSError:
-            continue
-    return sorted(set(found))
+# ---------------------------------------------------------------------------
+# Folder scanning
+# ---------------------------------------------------------------------------
 
-
-def build_output_path(source: Path, options: ConversionOptions) -> Path:
-    from app.core.validators import ensure_output_dir, ValidationError
-
-    output_dir = ensure_output_dir(options.output_dir)
-    stem = build_output_stem(source, options)
-    extension = preferred_extension(options.output_format)
-    path = unique_path(output_dir, stem, extension, options.overwrite)
-    if not is_inside_directory(path, output_dir):
-        raise ValidationError("Output path escapes the destination folder")
-    return path
+def collect_image_paths(
+    root: Path,
+    recursive: bool = False,
+) -> List[Path]:
+    """
+    Collect all supported image files under *root*.
+    If *recursive* is False only the immediate directory is scanned.
+    """
+    glob = "**/*" if recursive else "*"
+    results: list[Path] = []
+    for p in root.glob(glob):
+        if p.is_file() and p.suffix.lower() in INPUT_EXTENSIONS:
+            results.append(p)
+    return sorted(results)

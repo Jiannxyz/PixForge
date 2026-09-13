@@ -1,67 +1,58 @@
-"""Shared data models for the conversion engine."""
-
+"""Domain models shared across the application."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, auto
 from pathlib import Path
-
-
-class NamingMode(str, Enum):
-    CONVERTED = "converted"  # original.converted.ext
-    ORIGINAL = "original"  # original.ext
-    PREFIX = "prefix"  # {prefix}original.ext
+from typing import Optional
 
 
 class FileStatus(str, Enum):
-    WAITING = "WAITING"
-    CONVERTING = "CONVERTING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    SKIPPED = "SKIPPED"
+    WAITING = "Waiting"
+    CONVERTING = "Converting"
+    COMPLETED = "Completed"
+    FAILED = "Failed"
+    SKIPPED = "Skipped"
 
 
-class ConversionError(Exception):
-    """Raised when a single image cannot be converted."""
-
-    def __init__(self, message: str, code: str = "conversion_failed") -> None:
-        super().__init__(message)
-        self.code = code
+class NamingMode(str, Enum):
+    CONVERTED_SUFFIX = "original.converted.ext"   # photo.jpg → photo.converted.png
+    KEEP_STEM = "original.ext"                     # photo.jpg → photo.png
+    CUSTOM_PREFIX = "prefix_original.ext"          # prefix_photo.png
 
 
-@dataclass(frozen=True)
+@dataclass
 class ConversionOptions:
-    output_format: str
-    output_dir: Path
-    quality: int = 90
-    webp_quality: int = 80
+    output_format: str = "JPG"          # Key in SUPPORTED_FORMATS
+    output_dir: Optional[Path] = None
+    jpeg_quality: int = 90
+    png_compression: int = 6
     heic_quality: int = 80
-    png_compress_level: int = 6
-    background_color: tuple[int, int, int] = (255, 255, 255)
+    webp_quality: int = 90
     preserve_metadata: bool = True
-    apply_exif_orientation: bool = True
-    naming_mode: NamingMode = NamingMode.CONVERTED
-    custom_prefix: str = ""
     overwrite: bool = False
+    naming_mode: NamingMode = NamingMode.CONVERTED_SUFFIX
+    custom_prefix: str = ""
+    recursive: bool = False
 
 
 @dataclass
 class ConversionResult:
     success: bool
-    source_path: Path
-    output_path: Path | None = None
-    error: str | None = None
-    warning: str | None = None
-    input_format: str | None = None
-    output_format: str | None = None
-    width: int | None = None
-    height: int | None = None
+    input_path: Path
+    output_path: Optional[Path] = None
+    error: Optional[str] = None
     skipped: bool = False
 
 
 @dataclass
 class ImageJob:
-    source_path: Path
+    path: Path
     status: FileStatus = FileStatus.WAITING
-    result: ConversionResult | None = None
-    warnings: list[str] = field(default_factory=list)
+    error_message: Optional[str] = None
+    output_path: Optional[Path] = None
+    # Info populated after inspection
+    width: int = 0
+    height: int = 0
+    file_size: int = 0
+    detected_format: str = ""

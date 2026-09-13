@@ -1,25 +1,42 @@
-"""Application logging. Never log image contents."""
-
+"""Logging configuration for PixForge."""
 from __future__ import annotations
 
 import logging
-from logging.handlers import RotatingFileHandler
+import logging.handlers
+from pathlib import Path
 
-from app.config import APP_NAME, LOG_DIR, LOG_FILE
+
+def setup_logging(log_dir: Path | None = None) -> None:
+    """Configure rotating file handler + console handler."""
+    if log_dir is None:
+        log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file = log_dir / "pixforge.log"
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    # Rotating file handler (5 MB × 3 backups)
+    fh = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    fh.setLevel(logging.DEBUG)
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    fh.setFormatter(fmt)
+
+    # Console handler (WARNING+ only)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.WARNING)
+    ch.setFormatter(fmt)
+
+    if not root.handlers:
+        root.addHandler(fh)
+        root.addHandler(ch)
 
 
-def configure_logging(level: int = logging.INFO) -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("app")
-    if logger.handlers:
-        return
-    logger.setLevel(level)
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-
-    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    logger.addHandler(stream_handler)
-    logger.info("%s logging started", APP_NAME)
+def get_logger(name: str) -> logging.Logger:
+    return logging.getLogger(name)

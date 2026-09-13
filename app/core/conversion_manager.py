@@ -1,93 +1,90 @@
-"""Batch conversion without a GUI. One failure does not stop the rest."""
-
+"""Batch conversion manager — dispatches jobs to a thread pool."""
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
-from threading import Event
+from typing import Callable, List, Optional
 
 from app.core.converter import ImageConverter
-from app.models import ConversionOptions, ConversionResult, FileStatus, ImageJob
-from app.utils.platform import cpu_count
+from app.models import ConversionOptions, ConversionResult
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
-ProgressCallback = Callable[[ImageJob], None]
+ProgressCallback = Callable[[ConversionResult, int, int], None]
+JobStartedCallback = Callable[[Path], None]
 
 
 class ConversionManager:
-    def __init__(self, converter: ImageConverter | None = None, max_workers: int | None = None) -> None:
-        self.converter = converter or ImageConverter()
-        self.max_workers = max(1, max_workers or min(4, cpu_count()))
+    """
+    Manages a batch conversion using a ThreadPoolExecutor.
+    Thread-safe cancellation via threading.Event.
+    """
 
-    def convert_one(self, source: str | Path, options: ConversionOptions) -> ConversionResult:
-        return self.converter.convert(source, options)
+    def __init__(self) -> None:
+        self._converter = ImageConverter()
 
     def convert_batch(
         self,
-        sources: Sequence[str | Path],
+        paths: List[Path],
         options: ConversionOptions,
-        *,
-        cancel_event: Event | None = None,
-        job_started: ProgressCallback | None = None,
-        progress: ProgressCallback | None = None,
-        max_workers: int | None = None,
-    ) -> list[ConversionResult]:
-        paths = [Path(item) for item in sources]
-        if not paths:
-            return []
+        cancel_event: Optional[threading.Event] = None,
+        progress: Optional[ProgressCallback] = None,
+        job_started: Optional[JobStartedCallback] = None,
+        max_workers: Optional[int] = None,
+    ) -> List[ConversionResult]:
+        """
+        Convert all *paths* in parallel.
 
-        workers = max(1, max_workers or self.max_workers)
-        jobs = [ImageJob(source_path=path) for path in paths]
-        results: list[ConversionResult] = []
+        Callbacks fire from worker threads — callers must be thread-safe
+        (Qt signals handle this automatically).
 
-        def run_job(job: ImageJob) -> ConversionResult:
-            if cancel_event is not None and cancel_event.is_set():
-                skipped = ConversionResult(
-                    success=False,
-                    source_path=job.source_path,
-                    error="Cancelled",
-                    skipped=True,
+        Args:
+            paths: Input file list.
+            options: Shared conversion options.
+            cancel_event: Set to abort remaining jobs.
+            progress: Called after each job finishes (result, done, total).
+            job_started: Called when a job begins (path).
+            max_workers: Thread count (defaults to config.MAX_WORKERS).
+        """
+        from app.config import MAX_WORKERS
+
+        if max_workers is None:
+            max_workers = MAX_WORKERS
+
+        if cancel_event is None:
+            cancel_event = threading.Event()
+
+        total = len(paths)
+        results: List[ConversionResult] = []
+        done_count = 0
+        lock = threading.Lock()
+
+        def _run_one(path: Path) -> ConversionResult:
+            if cancel_event.is_set():
+                result = ConversionResult(
+                    success=False, input_path=path,
+                    error="Cancelled", skipped=True
                 )
-                job.status = FileStatus.SKIPPED
-                job.result = skipped
-                if progress:
-                    progress(job)
-                return skipped
-
-            job.status = FileStatus.CONVERTING
+                return result
             if job_started:
-                job_started(job)
+                job_started(path)
+            return self._converter.convert(path, options)
 
-            result = self.converter.convert(job.source_path, options)
-            job.result = result
-            job.status = FileStatus.COMPLETED if result.success else FileStatus.FAILED
-            if progress:
-                progress(job)
-            return result
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_to_path: dict[Future, Path] = {
+                pool.submit(_run_one, p): p for p in paths
+            }
 
-        if workers == 1:
-            for job in jobs:
-                if cancel_event is not None and cancel_event.is_set():
-                    skipped = ConversionResult(
-                        success=False,
-                        source_path=job.source_path,
-                        error="Cancelled",
-                        skipped=True,
-                    )
-                    job.status = FileStatus.SKIPPED
-                    job.result = skipped
-                    if progress:
-                        progress(job)
-                    results.append(skipped)
-                    continue
-                results.append(run_job(job))
-            return results
+            for future in as_completed(future_to_path):
+                result = future.result()
+                with lock:
+                    done_count += 1
+                    results.append(result)
+                    current_done = done_count
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(run_job, job): job for job in jobs}
-            for future in as_completed(futures):
-                results.append(future.result())
+                if progress:
+                    progress(result, current_done, total)
+
         return results

@@ -1,43 +1,65 @@
-"""Lightweight image inspection for the file queue. Does not convert files."""
-
+"""Image inspection helpers — dimensions, format, file size."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageOps
+from PIL import Image, UnidentifiedImageError
 
-from app.config import DEFAULT_THUMBNAIL_SIZE
-from app.formats import format_from_extension, register_image_plugins
-
-
-@dataclass(frozen=True)
-class ImagePreview:
-    path: Path
-    width: int | None
-    height: int | None
-    format_key: str | None
-    thumbnail_jpeg: bytes | None
-    error: str | None = None
+from app.formats import format_for_extension
 
 
-def inspect_and_thumbnail(
-    source: str | Path,
-    size: tuple[int, int] = DEFAULT_THUMBNAIL_SIZE,
-) -> ImagePreview:
-    register_image_plugins()
-    path = Path(source)
-    spec = format_from_extension(path)
-    format_key = spec.key if spec else None
+@dataclass
+class ImageInfo:
+    width: int
+    height: int
+    detected_format: str   # Upper-case key e.g. 'JPG', 'HEIC'
+    file_size: int         # Bytes on disk
+    mode: str              # PIL mode e.g. 'RGB', 'RGBA'
+
+
+def get_image_info(path: Path) -> ImageInfo | None:
+    """
+    Open *path* just enough to read header metadata.
+    Returns None if the file cannot be identified.
+    Does NOT load pixel data into memory.
+    """
     try:
-        with Image.open(path) as image:
-            image = ImageOps.exif_transpose(image) or image
-            width, height = image.size
-            preview = image.convert("RGB") if image.mode not in {"RGB", "L"} else image.copy()
-            preview.thumbnail(size, Image.Resampling.LANCZOS)
-            buffer = BytesIO()
-            preview.save(buffer, format="JPEG", quality=70, optimize=True)
-            return ImagePreview(path, width, height, format_key, buffer.getvalue())
-    except Exception as exc:
-        return ImagePreview(path, None, None, format_key, None, error=str(exc))
+        with Image.open(path) as img:
+            width, height = img.size
+            mode = img.mode
+        detected = format_for_extension(path.suffix) or path.suffix.lstrip(".").upper()
+        file_size = path.stat().st_size
+        return ImageInfo(
+            width=width,
+            height=height,
+            detected_format=detected,
+            file_size=file_size,
+            mode=mode,
+        )
+    except (UnidentifiedImageError, OSError, Exception):  # noqa: BLE001
+        return None
+
+
+def make_thumbnail(path: Path, size: int = 72) -> bytes | None:
+    """
+    Return JPEG thumbnail bytes for *path*, or None on failure.
+    Uses PIL thumbnail() which downsamples without loading the full image.
+    """
+    try:
+        with Image.open(path) as img:
+            img.thumbnail((size, size), Image.LANCZOS)
+            if img.mode in ("RGBA", "P", "LA"):
+                bg = Image.new("RGB", img.size, (40, 40, 40))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+                img = bg
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+            import io
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=75)
+            return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        return None

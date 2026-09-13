@@ -1,36 +1,54 @@
-"""Shared widgets and display helpers."""
-
+"""Shared helper widgets and formatting utilities."""
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPushButton
 
-
-def format_bytes(size: int) -> str:
-    value = float(size)
-    for unit in ("B", "KB", "MB", "GB"):
-        if value < 1024 or unit == "GB":
-            if unit == "B":
-                return f"{int(value)} {unit}"
-            return f"{value:.1f} {unit}"
-        value /= 1024
-    return f"{size} B"
+from app.models import FileStatus
 
 
-def format_dimensions(width: int | None, height: int | None) -> str:
-    if width is None or height is None:
-        return "—"
-    return f"{width} × {height}"
+# ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
+
+def format_bytes(n: int) -> str:
+    """Return a human-readable file size string."""
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 ** 2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024 ** 3:
+        return f"{n / 1024 ** 2:.1f} MB"
+    return f"{n / 1024 ** 3:.2f} GB"
 
 
-def status_label(status: str) -> str:
-    mapping = {
-        "WAITING": "Ready",
-        "CONVERTING": "Converting",
-        "COMPLETED": "Completed",
-        "FAILED": "Failed",
-        "SKIPPED": "Skipped",
-    }
-    return mapping.get(status, status.title())
+def format_dimensions(w: int, h: int) -> str:
+    if w and h:
+        return f"{w} × {h}"
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Styled label helpers
+# ---------------------------------------------------------------------------
+
+class TitleLabel(QLabel):
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("title")
+        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+
+class SubtitleLabel(QLabel):
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("subtitle")
+
+
+class SectionLabel(QLabel):
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(text.upper(), parent)
+        self.setObjectName("section")
 
 
 class MutedLabel(QLabel):
@@ -39,25 +57,44 @@ class MutedLabel(QLabel):
         self.setObjectName("muted")
 
 
-class TitleLabel(QLabel):
-    def __init__(self, text: str, parent=None) -> None:
-        super().__init__(text, parent)
-        self.setObjectName("title")
-
-
-class SubtitleLabel(QLabel):
-    def __init__(self, text: str, parent=None) -> None:
-        super().__init__(text, parent)
-        self.setObjectName("subtitle")
-
-
-class SectionLabel(QLabel):
-    def __init__(self, text: str, parent=None) -> None:
-        super().__init__(text.upper(), parent)
-        self.setObjectName("section")
-
-
 class PrimaryButton(QPushButton):
-    def __init__(self, text: str, parent=None) -> None:
+    def __init__(self, text: str = "", parent=None) -> None:
         super().__init__(text, parent)
         self.setObjectName("primary")
+
+
+# ---------------------------------------------------------------------------
+# Status badge
+# ---------------------------------------------------------------------------
+
+STATUS_OBJECT_NAMES = {
+    FileStatus.WAITING: "statusWaiting",
+    FileStatus.CONVERTING: "statusConverting",
+    FileStatus.COMPLETED: "statusCompleted",
+    FileStatus.FAILED: "statusFailed",
+    FileStatus.SKIPPED: "statusSkipped",
+}
+
+STATUS_ICONS = {
+    FileStatus.WAITING: "◦",
+    FileStatus.CONVERTING: "↻",
+    FileStatus.COMPLETED: "✓",
+    FileStatus.FAILED: "✗",
+    FileStatus.SKIPPED: "⊘",
+}
+
+
+def make_status_label(status: FileStatus, parent=None) -> QLabel:
+    icon = STATUS_ICONS.get(status, "")
+    lbl = QLabel(f"{icon} {status.value}", parent)
+    lbl.setObjectName(STATUS_OBJECT_NAMES.get(status, "muted"))
+    return lbl
+
+
+def update_status_label(label: QLabel, status: FileStatus) -> None:
+    icon = STATUS_ICONS.get(status, "")
+    label.setText(f"{icon} {status.value}")
+    label.setObjectName(STATUS_OBJECT_NAMES.get(status, "muted"))
+    # Force stylesheet re-evaluation
+    label.style().unpolish(label)
+    label.style().polish(label)

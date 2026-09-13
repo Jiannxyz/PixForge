@@ -1,15 +1,17 @@
-"""Settings dialog persisted via QSettings."""
-
+"""Settings dialog with QSettings persistence."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import Optional
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
+    QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -20,143 +22,163 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import (
+    APP_NAME,
+    APP_ORG,
     DEFAULT_HEIC_QUALITY,
     DEFAULT_JPEG_QUALITY,
-    DEFAULT_MAX_WORKERS,
-    DEFAULT_PNG_COMPRESS_LEVEL,
-    DEFAULT_PRESERVE_METADATA,
+    DEFAULT_PNG_COMPRESSION,
+    DEFAULT_WEBP_QUALITY,
+    MAX_WORKERS,
 )
-from app.utils.platform import cpu_count, default_output_dir
 
 
 class SettingsDialog(QDialog):
+    """Configuration dialog backed by QSettings."""
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("PixForge Settings")
-        self.setMinimumWidth(460)
-        self.settings = QSettings("PixForge", "PixForge")
+        self.setWindowTitle(f"{APP_NAME} Settings")
+        self.setMinimumWidth(450)
+        self._settings = QSettings(APP_ORG, APP_NAME)
+        self._build_ui()
+        self._load_settings()
 
+    def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        # General Group
-        general_group = QGroupBox("General")
-        gen_layout = QVBoxLayout(general_group)
-        gen_layout.setSpacing(10)
+        # ── General Settings Group ──
+        general_group = QGroupBox("General", self)
+        gen_form = QFormLayout(general_group)
 
-        folder_label = QLabel("Default Output Folder:")
-        gen_layout.addWidget(folder_label)
+        # Theme selection
+        self._theme_combo = QComboBox(self)
+        self._theme_combo.addItem("Dark", "dark")
+        self._theme_combo.addItem("Light", "light")
+        gen_form.addRow("Theme:", self._theme_combo)
 
-        folder_row = QHBoxLayout()
-        self.folder_input = QLineEdit()
-        self.browse_btn = QPushButton("Browse…")
-        self.browse_btn.clicked.connect(self._browse_folder)
-        folder_row.addWidget(self.folder_input, stretch=1)
-        folder_row.addWidget(self.browse_btn)
-        gen_layout.addLayout(folder_row)
+        # Default output folder
+        folder_layout = QHBoxLayout()
+        self._default_folder_edit = QLineEdit(self)
+        self._default_folder_edit.setPlaceholderText("Leave empty to use source folder")
+        folder_btn = QPushButton("Browse...", self)
+        folder_btn.clicked.connect(self._browse_default_folder)
+        folder_layout.addWidget(self._default_folder_edit)
+        folder_layout.addWidget(folder_btn)
+        gen_form.addRow("Default Output Folder:", folder_layout)
 
-        self.auto_open_checkbox = QCheckBox("Automatically open output folder after conversion")
-        gen_layout.addWidget(self.auto_open_checkbox)
-
-        self.preserve_meta_checkbox = QCheckBox("Preserve metadata by default")
-        gen_layout.addWidget(self.preserve_meta_checkbox)
+        self._auto_open_folder = QCheckBox("Automatically open output folder after conversion", self)
+        gen_form.addRow("", self._auto_open_folder)
 
         layout.addWidget(general_group)
 
-        # Performance Group
-        perf_group = QGroupBox("Performance")
-        perf_layout = QHBoxLayout(perf_group)
-        perf_layout.addWidget(QLabel("Worker threads:"))
-        self.workers_combo = QComboBox()
-        self.workers_combo.addItem(f"Auto (recommended: {min(4, cpu_count())})", 0)
-        for w in (1, 2, 4, 8, 16):
-            self.workers_combo.addItem(str(w), w)
-        perf_layout.addWidget(self.workers_combo)
-        perf_layout.addStretch()
+        # ── Performance Settings Group ──
+        perf_group = QGroupBox("Performance", self)
+        perf_form = QFormLayout(perf_group)
+
+        self._worker_spin = QSpinBox(self)
+        self._worker_spin.setRange(1, max(1, (os.cpu_count() or 4) * 2))
+        self._worker_spin.setValue(MAX_WORKERS)
+        perf_form.addRow("Worker Threads:", self._worker_spin)
+
         layout.addWidget(perf_group)
 
-        # Format Defaults Group
-        defaults_group = QGroupBox("Default Quality & Compression")
-        def_layout = QVBoxLayout(defaults_group)
-        def_layout.setSpacing(10)
+        # ── Format Defaults Group ──
+        fmt_group = QGroupBox("Format Quality Defaults", self)
+        fmt_form = QFormLayout(fmt_group)
 
-        # JPEG
-        jpeg_row = QHBoxLayout()
-        jpeg_row.addWidget(QLabel("Default JPEG Quality (1–100):"))
-        self.jpeg_spin = QSpinBox()
-        self.jpeg_spin.setRange(1, 100)
-        jpeg_row.addWidget(self.jpeg_spin)
-        def_layout.addLayout(jpeg_row)
+        self._jpeg_quality_spin = QSpinBox(self)
+        self._jpeg_quality_spin.setRange(1, 100)
+        self._jpeg_quality_spin.setValue(DEFAULT_JPEG_QUALITY)
+        fmt_form.addRow("JPEG Quality (1-100):", self._jpeg_quality_spin)
 
-        # PNG
-        png_row = QHBoxLayout()
-        png_row.addWidget(QLabel("Default PNG Compression (0–9):"))
-        self.png_spin = QSpinBox()
-        self.png_spin.setRange(0, 9)
-        png_row.addWidget(self.png_spin)
-        def_layout.addLayout(png_row)
+        self._png_comp_spin = QSpinBox(self)
+        self._png_comp_spin.setRange(0, 9)
+        self._png_comp_spin.setValue(DEFAULT_PNG_COMPRESSION)
+        fmt_form.addRow("PNG Compression (0-9):", self._png_comp_spin)
 
-        # HEIC
-        heic_row = QHBoxLayout()
-        heic_row.addWidget(QLabel("Default HEIC Quality (1–100):"))
-        self.heic_spin = QSpinBox()
-        self.heic_spin.setRange(1, 100)
-        heic_row.addWidget(self.heic_spin)
-        def_layout.addLayout(heic_row)
+        self._heic_quality_spin = QSpinBox(self)
+        self._heic_quality_spin.setRange(1, 100)
+        self._heic_quality_spin.setValue(DEFAULT_HEIC_QUALITY)
+        fmt_form.addRow("HEIC Quality (1-100):", self._heic_quality_spin)
 
-        layout.addWidget(defaults_group)
+        self._webp_quality_spin = QSpinBox(self)
+        self._webp_quality_spin.setRange(1, 100)
+        self._webp_quality_spin.setValue(DEFAULT_WEBP_QUALITY)
+        fmt_form.addRow("WEBP Quality (1-100):", self._webp_quality_spin)
 
-        # Dialog Buttons
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        self.cancel_btn = QPushButton("Cancel")
-        self.save_btn = QPushButton("Save Settings")
-        self.save_btn.setObjectName("primary")
-        self.cancel_btn.clicked.connect(self.reject)
-        self.save_btn.clicked.connect(self._save_settings)
-        btn_row.addWidget(self.cancel_btn)
-        btn_row.addWidget(self.save_btn)
-        layout.addLayout(btn_row)
+        layout.addWidget(fmt_group)
 
-        self._load_settings()
+        # ── Dialog Buttons ──
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
 
-    def _browse_folder(self) -> None:
-        curr = self.folder_input.text().strip() or str(default_output_dir())
+        self._save_btn = QPushButton("Save", self)
+        self._save_btn.setObjectName("primary")
+        self._save_btn.clicked.connect(self._save_and_accept)
+
+        self._cancel_btn = QPushButton("Cancel", self)
+        self._cancel_btn.clicked.connect(self.reject)
+
+        btn_box.addWidget(self._cancel_btn)
+        btn_box.addWidget(self._save_btn)
+        layout.addLayout(btn_box)
+
+    def _browse_default_folder(self) -> None:
+        curr = self._default_folder_edit.text()
         chosen = QFileDialog.getExistingDirectory(self, "Select Default Output Folder", curr)
         if chosen:
-            self.folder_input.setText(chosen)
+            self._default_folder_edit.setText(chosen)
 
     def _load_settings(self) -> None:
-        default_dir = self.settings.value("default_output_dir", str(default_output_dir()))
-        self.folder_input.setText(str(default_dir))
-
-        auto_open = self.settings.value("auto_open_folder", False, type=bool)
-        self.auto_open_checkbox.setChecked(auto_open)
-
-        preserve_meta = self.settings.value("preserve_metadata", DEFAULT_PRESERVE_METADATA, type=bool)
-        self.preserve_meta_checkbox.setChecked(preserve_meta)
-
-        workers = self.settings.value("max_workers", 0, type=int)
-        idx = self.workers_combo.findData(workers)
+        theme = self._settings.value("general/theme", "dark")
+        idx = self._theme_combo.findData(theme)
         if idx >= 0:
-            self.workers_combo.setCurrentIndex(idx)
+            self._theme_combo.setCurrentIndex(idx)
 
-        jpeg_q = self.settings.value("jpeg_quality", DEFAULT_JPEG_QUALITY, type=int)
-        self.jpeg_spin.setValue(jpeg_q)
+        self._default_folder_edit.setText(self._settings.value("general/default_output_dir", ""))
+        self._auto_open_folder.setChecked(
+            self._settings.value("general/auto_open_output", False, type=bool)
+        )
 
-        png_c = self.settings.value("png_compression", DEFAULT_PNG_COMPRESS_LEVEL, type=int)
-        self.png_spin.setValue(png_c)
+        self._worker_spin.setValue(
+            int(self._settings.value("performance/max_workers", MAX_WORKERS))
+        )
+        self._jpeg_quality_spin.setValue(
+            int(self._settings.value("defaults/jpeg_quality", DEFAULT_JPEG_QUALITY))
+        )
+        self._png_comp_spin.setValue(
+            int(self._settings.value("defaults/png_compression", DEFAULT_PNG_COMPRESSION))
+        )
+        self._heic_quality_spin.setValue(
+            int(self._settings.value("defaults/heic_quality", DEFAULT_HEIC_QUALITY))
+        )
+        self._webp_quality_spin.setValue(
+            int(self._settings.value("defaults/webp_quality", DEFAULT_WEBP_QUALITY))
+        )
 
-        heic_q = self.settings.value("heic_quality", DEFAULT_HEIC_QUALITY, type=int)
-        self.heic_spin.setValue(heic_q)
+    def _save_and_accept(self) -> None:
+        self._settings.setValue("general/theme", self._theme_combo.currentData())
+        self._settings.setValue("general/default_output_dir", self._default_folder_edit.text().strip())
+        self._settings.setValue("general/auto_open_output", self._auto_open_folder.isChecked())
 
-    def _save_settings(self) -> None:
-        self.settings.setValue("default_output_dir", self.folder_input.text().strip())
-        self.settings.setValue("auto_open_folder", self.auto_open_checkbox.isChecked())
-        self.settings.setValue("preserve_metadata", self.preserve_meta_checkbox.isChecked())
-        self.settings.setValue("max_workers", self.workers_combo.currentData())
-        self.settings.setValue("jpeg_quality", self.jpeg_spin.value())
-        self.settings.setValue("png_compression", self.png_spin.value())
-        self.settings.setValue("heic_quality", self.heic_spin.value())
+        self._settings.setValue("performance/max_workers", self._worker_spin.value())
+        self._settings.setValue("defaults/jpeg_quality", self._jpeg_quality_spin.value())
+        self._settings.setValue("defaults/png_compression", self._png_comp_spin.value())
+        self._settings.setValue("defaults/heic_quality", self._heic_quality_spin.value())
+        self._settings.setValue("defaults/webp_quality", self._webp_quality_spin.value())
+
         self.accept()
+
+    def get_theme(self) -> str:
+        return self._theme_combo.currentData() or "dark"
+
+    def get_default_output_folder(self) -> Optional[Path]:
+        val = self._default_folder_edit.text().strip()
+        return Path(val) if val else None
+
+    def get_max_workers(self) -> int:
+        return self._worker_spin.value()
+
+    def get_auto_open_output(self) -> bool:
+        return self._auto_open_folder.isChecked()

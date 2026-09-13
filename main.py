@@ -1,66 +1,101 @@
-"""PixForge entry point."""
-
+"""Application entry point for PixForge."""
 from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from pillow_heif import register_heif_opener
 
-from app.core.converter import ImageConverter
-from app.formats import register_image_plugins
-from app.logging_config import configure_logging
-from app.models import ConversionOptions
-from app.ui.main_window import MainWindow
+# Always register pillow-heif opener at startup for HEIC/HEIF decoding & encoding
+register_heif_opener()
 
+from app.config import APP_NAME
+from app.logging_config import get_logger, setup_logging
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="PixForge — Offline Image Converter.")
-    parser.add_argument(
-        "source",
-        nargs="?",
-        help="Source image path (if omitted, launches the desktop GUI)",
-    )
-    parser.add_argument(
-        "--format",
-        dest="output_format",
-        default="JPG",
-        help="Output format key, e.g. JPG or PNG",
-    )
-    parser.add_argument("--out", dest="output_dir", default=".", help="Output directory")
-    parser.add_argument("--quality", type=int, default=90)
-    return parser.parse_args(argv)
+log = get_logger("main")
 
 
 def run_gui() -> int:
-    app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("PixForge")
-    app.setOrganizationName("PixForge")
+    """Launch the PySide6 desktop GUI."""
+    from PySide6.QtWidgets import QApplication
+    from app.ui.main_window import MainWindow
+
+    setup_logging()
+    log.info("Starting %s GUI...", APP_NAME)
+
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+
     window = MainWindow()
     window.show()
+
     return app.exec()
 
 
-def main(argv: list[str] | None = None) -> int:
-    configure_logging()
-    register_image_plugins()
-    args = parse_args(argv)
-    if not args.source:
-        return run_gui()
+def run_cli(args: argparse.Namespace) -> int:
+    """Fallback CLI conversion mode for scripting or headless conversion."""
+    from app.core.conversion_manager import ConversionManager
+    from app.models import ConversionOptions
+    from app.utils.filesystem import collect_image_paths
 
-    options = ConversionOptions(
-        output_format=args.output_format,
-        output_dir=Path(args.output_dir),
-        quality=args.quality,
-    )
-    result = ImageConverter().convert(args.source, options)
-    if result.success:
-        print(f"Converted: {result.output_path}")
+    setup_logging()
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: Input path '{input_path}' does not exist.")
+        return 1
+
+    if input_path.is_dir():
+        paths = collect_image_paths(input_path, recursive=args.recursive)
+    else:
+        paths = [input_path]
+
+    if not paths:
+        print("No supported image files found.")
         return 0
-    print(f"Failed: {result.error}", file=sys.stderr)
-    return 1
+
+    out_dir = Path(args.output) if args.output else None
+    options = ConversionOptions(
+        output_format=args.format.upper(),
+        output_dir=out_dir,
+        jpeg_quality=args.quality,
+        png_compression=args.compression,
+        overwrite=args.overwrite,
+    )
+
+    print(f"Converting {len(paths)} file(s) to {options.output_format}...")
+    manager = ConversionManager()
+
+    def _progress(res, done, total):
+        status = "OK" if res.success else f"FAIL ({res.error})"
+        print(f"[{done}/{total}] {res.input_path.name} -> {status}")
+
+    results = manager.convert_batch(paths, options, progress=_progress)
+    succeeded = sum(1 for r in results if r.success)
+    failed = len(results) - succeeded
+    print(f"\nBatch complete: {succeeded} succeeded, {failed} failed.")
+    return 0 if failed == 0 else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="PixForge: Fast Offline Batch Image Converter",
+    )
+    parser.add_argument("-i", "--input", help="Path to an image file or folder")
+    parser.add_argument("-o", "--output", help="Output directory")
+    parser.add_argument("-f", "--format", default="JPG", help="Target format (JPG, PNG, WEBP, HEIC, etc.)")
+    parser.add_argument("-q", "--quality", type=int, default=90, help="JPEG/HEIC/WEBP quality (1-100)")
+    parser.add_argument("-c", "--compression", type=int, default=6, help="PNG compression level (0-9)")
+    parser.add_argument("-r", "--recursive", action="store_true", help="Recursively scan folders")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
+
+    # If any conversion arguments are provided, use CLI mode; otherwise run desktop GUI
+    if len(sys.argv) > 1 and ("-i" in sys.argv or "--input" in sys.argv):
+        args = parser.parse_args()
+        return run_cli(args)
+    else:
+        return run_gui()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

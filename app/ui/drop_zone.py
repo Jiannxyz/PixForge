@@ -1,18 +1,29 @@
-"""Drag-and-drop target for files and folders."""
-
+"""Drop zone widget — accepts drag-and-drop of images and folders."""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from typing import List
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
-from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QPushButton, QSizePolicy, QVBoxLayout,
+)
 
-from app.ui.widgets import MutedLabel
+from app.formats import INPUT_EXTENSIONS
+
+log = logging.getLogger(__name__)
 
 
 class DropZone(QFrame):
-    files_dropped = Signal(list)
+    """
+    Drag-and-drop area at the top of the window.
+    Emits *files_dropped* with a flat list of resolved paths.
+    """
+
+    files_dropped = Signal(list)  # List[Path]
     add_images_clicked = Signal()
     add_folder_clicked = Signal()
 
@@ -20,74 +31,97 @@ class DropZone(QFrame):
         super().__init__(parent)
         self.setObjectName("dropZone")
         self.setAcceptDrops(True)
-        self.setMinimumHeight(140)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumHeight(130)
 
+        self._build_ui()
+
+    # ------------------------------------------------------------------
+    def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(6)
+        layout.setContentsMargins(24, 18, 24, 18)
+        layout.setSpacing(8)
 
-        title = QLabel("DROP IMAGES HERE")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 16px; font-weight: 700; color: #f4f6fb; background: transparent;")
-        hint = MutedLabel("Drag & drop images or folders here. All conversions run locally on your device.")
+        # Icon + primary text
+        icon = QLabel("🖼", self)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setStyleSheet("font-size: 28px;")
+
+        hint = QLabel("Drop images or folders here", self)
+        hint.setObjectName("dropHint")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet("background: transparent;")
-        formats = MutedLabel("Supports: HEIC • JPG • PNG • WEBP • GIF • TIFF • BMP • AVIF")
-        formats.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        formats.setStyleSheet("font-size: 12px; color: #788296; background: transparent;")
 
-        buttons = QHBoxLayout()
-        buttons.setSpacing(12)
-        buttons.addStretch()
+        sub = QLabel(
+            "HEIC  •  JPG  •  PNG  •  WEBP  •  GIF  •  TIFF  •  BMP", self
+        )
+        sub.setObjectName("dropSub")
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.add_images_button = QPushButton("Add Images")
-        self.add_folder_button = QPushButton("Add Folder")
-        self.subfolder_checkbox = QCheckBox("Include subfolders")
-        self.subfolder_checkbox.setChecked(True)
-        self.subfolder_checkbox.setStyleSheet("background: transparent; color: #c5cdd8; font-size: 12px;")
+        # Buttons row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        btn_row.addStretch()
 
-        self.add_images_button.clicked.connect(self.add_images_clicked.emit)
-        self.add_folder_button.clicked.connect(self.add_folder_clicked.emit)
+        self._add_images_btn = QPushButton("📂  Add Images", self)
+        self._add_images_btn.setFixedHeight(34)
+        self._add_images_btn.clicked.connect(self.add_images_clicked)
 
-        buttons.addWidget(self.add_images_button)
-        buttons.addWidget(self.add_folder_button)
-        buttons.addSpacing(8)
-        buttons.addWidget(self.subfolder_checkbox)
-        buttons.addStretch()
+        self._add_folder_btn = QPushButton("📁  Add Folder", self)
+        self._add_folder_btn.setFixedHeight(34)
+        self._add_folder_btn.clicked.connect(self.add_folder_clicked)
 
-        layout.addStretch()
-        layout.addWidget(title)
+        btn_row.addWidget(self._add_images_btn)
+        btn_row.addWidget(self._add_folder_btn)
+        btn_row.addStretch()
+
+        # Subfolder checkbox
+        self.include_subfolders = QCheckBox("Include subfolders", self)
+        self.include_subfolders.setChecked(True)
+        sf_row = QHBoxLayout()
+        sf_row.addStretch()
+        sf_row.addWidget(self.include_subfolders)
+        sf_row.addStretch()
+
+        layout.addWidget(icon)
         layout.addWidget(hint)
-        layout.addWidget(formats)
-        layout.addSpacing(4)
-        layout.addLayout(buttons)
-        layout.addStretch()
+        layout.addWidget(sub)
+        layout.addSpacing(6)
+        layout.addLayout(btn_row)
+        layout.addLayout(sf_row)
 
-    @property
-    def include_subfolders(self) -> bool:
-        return self.subfolder_checkbox.isChecked()
-
+    # ------------------------------------------------------------------
+    # Drag-and-drop handlers
+    # ------------------------------------------------------------------
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
-            self.setProperty("active", True)
+            event.acceptProposedAction()
+            self.setObjectName("dropZoneActive")
             self.style().unpolish(self)
             self.style().polish(self)
-            event.acceptProposedAction()
-        else:
-            event.ignore()
 
     def dragLeaveEvent(self, event) -> None:
-        self.setProperty("active", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        event.accept()
+        self._reset_style()
 
     def dropEvent(self, event: QDropEvent) -> None:
-        self.setProperty("active", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls() if url.toLocalFile()]
+        self._reset_style()
+        paths: List[Path] = []
+        recursive = self.include_subfolders.isChecked()
+
+        for url in event.mimeData().urls():
+            local = Path(url.toLocalFile())
+            if local.is_dir():
+                from app.utils.filesystem import collect_image_paths
+                paths.extend(collect_image_paths(local, recursive=recursive))
+            elif local.is_file() and local.suffix.lower() in INPUT_EXTENSIONS:
+                paths.append(local)
+
         if paths:
+            log.info("Dropped %d paths from drop zone", len(paths))
             self.files_dropped.emit(paths)
         event.acceptProposedAction()
+
+    def _reset_style(self) -> None:
+        self.setObjectName("dropZone")
+        self.style().unpolish(self)
+        self.style().polish(self)
