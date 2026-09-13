@@ -18,3 +18,13 @@
 2026-09-13 15:19:19,355 INFO app.core.converter: Converted C:\Users\Jian\Pictures\JPCS\Halubilo 2026\Afternoon Posting\Dionese Phone\IMG_4365.HEIC -> C:\Users\Jian\AppData\Local\Temp\pytest-of-Jian\pytest-17\test_settings_dialog_roundtrip0\IMG_4365.converted.jpg
 2026-09-13 16:17:48 [INFO] main: Starting PixForge GUI...
 2026-09-13 16:18:46 [INFO] app.ui.main_window: Added 5 files
+2026-09-13 16:23:05 [INFO] main: Starting PixForge GUI...
+2026-09-13 16:23:16 [INFO] app.ui.drop_zone: Dropped 5 paths from drop zone
+2026-09-13 16:23:16 [INFO] app.ui.main_window: Added 5 files
+2026-09-13 16:23:58 [INFO] app.ui.main_window: Added 5 files
+2026-09-13 16:24:21 [INFO] main: Starting PixForge GUI...
+2026-09-13 16:24:33 [INFO] app.ui.drop_zone: Dropped 5 paths from drop zone
+2026-09-13 16:24:33 [INFO] app.ui.main_window: Added 5 files
+2026-09-13 16:24:45 [INFO] main: Starting PixForge GUI...
+2026-09-13 16:24:57 [INFO] app.ui.drop_zone: Dropped 6 paths from drop zone
+2026-09-13 16:24:57 [INFO] app.ui.main_window: Added 6 files
