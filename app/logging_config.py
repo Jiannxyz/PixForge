@@ -3,13 +3,18 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import sys
 from pathlib import Path
 
 
 def setup_logging(log_dir: Path | None = None) -> None:
     """Configure rotating file handler + console handler."""
     if log_dir is None:
-        log_dir = Path("logs")
+        if getattr(sys, "frozen", False):
+            base = Path(sys.executable).resolve().parent
+        else:
+            base = Path.cwd()
+        log_dir = base / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = log_dir / "pixforge.log"
