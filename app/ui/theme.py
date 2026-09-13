@@ -74,10 +74,16 @@ QFrame#thumbnailBox {{
 }}
 QFrame#row {{
     background-color: transparent;
+    border: 1px solid transparent;
     border-radius: 6px;
 }}
 QFrame#row:hover {{
     background-color: {card};
+}}
+QFrame#rowActive {{
+    background-color: {card};
+    border: 1px solid {accent};
+    border-radius: 6px;
 }}
 QFrame#header {{
     background: qlineargradient(

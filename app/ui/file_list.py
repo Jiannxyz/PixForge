@@ -9,10 +9,10 @@ from PySide6.QtCore import (
     QObject, QRunnable, QSize, Qt, QThreadPool, Signal, Slot,
 )
 from PySide6.QtGui import (
-    QDragEnterEvent, QDropEvent, QPixmap,
+    QDragEnterEvent, QDropEvent, QMouseEvent, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
@@ -81,21 +81,30 @@ class AddResult(int):
 # ---------------------------------------------------------------------------
 
 class FileQueueRow(QFrame):
-    """One row in the file queue showing thumbnail, info, status, remove."""
+    """One row in the file queue showing checkbox, thumbnail, info, status, remove."""
 
     remove_requested = Signal(Path)
+    selection_changed = Signal(Path, bool)
 
     def __init__(self, path: Path, parent=None) -> None:
         super().__init__(parent)
         self.path = path
         self.setObjectName("row")
         self.setFixedHeight(84)
+        self._selected: bool = False
         self._build_ui()
 
     def _build_ui(self) -> None:
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(10)
+
+        # Selection Checkbox
+        self._check = QCheckBox(self)
+        self._check.setChecked(False)
+        self._check.setToolTip("Select file")
+        self._check.toggled.connect(self._on_check_toggled)
+        layout.addWidget(self._check)
 
         # Thumbnail
         self._thumb = QLabel(self)
@@ -129,6 +138,34 @@ class FileQueueRow(QFrame):
         remove_btn.setToolTip("Remove")
         remove_btn.clicked.connect(lambda: self.remove_requested.emit(self.path))
         layout.addWidget(remove_btn)
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def set_selected(self, selected: bool) -> None:
+        if self._selected != selected:
+            self._selected = selected
+            self._check.blockSignals(True)
+            self._check.setChecked(selected)
+            self._check.blockSignals(False)
+            self._update_selection_style()
+            self.selection_changed.emit(self.path, selected)
+
+    def _on_check_toggled(self, checked: bool) -> None:
+        self._selected = checked
+        self._update_selection_style()
+        self.selection_changed.emit(self.path, checked)
+
+    def _update_selection_style(self) -> None:
+        self.setObjectName("rowActive" if self._selected else "row")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Clicking anywhere on the row toggles selection
+            self.set_selected(not self._selected)
+        super().mousePressEvent(event)
 
     # ------------------------------------------------------------------
 
@@ -223,6 +260,11 @@ class FileQueueWidget(QWidget):
 
         self._count_lbl = SectionLabel("0 images", self)
 
+        # Select-all checkbox
+        self._select_all_chk = QCheckBox("Select all", self)
+        self._select_all_chk.setToolTip("Select / deselect all visible files")
+        self._select_all_chk.toggled.connect(self._toggle_select_all)
+
         self._search = QLineEdit(self)
         self._search.setPlaceholderText("🔍  Search files…")
         self._search.setMaximumWidth(220)
@@ -236,6 +278,7 @@ class FileQueueWidget(QWidget):
 
         self._remove_sel_btn = QPushButton("Remove Selected", self)
         self._remove_sel_btn.setFixedHeight(28)
+        self._remove_sel_btn.setToolTip("Remove checked files from the queue")
         self._remove_sel_btn.clicked.connect(self._remove_selected)
 
         self._clear_btn = QPushButton("Clear All", self)
@@ -243,6 +286,8 @@ class FileQueueWidget(QWidget):
         self._clear_btn.clicked.connect(self.clear_all)
 
         h_layout.addWidget(self._count_lbl)
+        h_layout.addSpacing(8)
+        h_layout.addWidget(self._select_all_chk)
         h_layout.addStretch()
         h_layout.addWidget(self._search)
         h_layout.addWidget(sort_lbl)
@@ -321,6 +366,7 @@ class FileQueueWidget(QWidget):
             self._seen.add(resolved)
             row = FileQueueRow(resolved)
             row.remove_requested.connect(self._remove_row)
+            row.selection_changed.connect(lambda _p, _checked: self._update_count())
             self._rows[resolved] = row
 
             # Insert before the trailing stretch
@@ -352,6 +398,9 @@ class FileQueueWidget(QWidget):
         self._rows.clear()
         self._seen.clear()
         self._empty_widget.setVisible(True)
+        self._select_all_chk.blockSignals(True)
+        self._select_all_chk.setChecked(False)
+        self._select_all_chk.blockSignals(False)
         self._update_count()
         self.queue_changed.emit(0)
 
@@ -384,16 +433,30 @@ class FileQueueWidget(QWidget):
             self.queue_changed.emit(len(self._rows))
 
     def _remove_selected(self) -> None:
-        # Remove all currently visible (not hidden by filter)
+        """Remove only rows that the user has explicitly selected (checked)."""
         to_remove = [
-            p for p, row in self._rows.items() if not row.isHidden()
+            p for p, row in self._rows.items() if row.is_selected()
         ]
+        if not to_remove:
+            return  # nothing selected — do nothing
         for p in to_remove:
             self._remove_row(p)
 
+    def _toggle_select_all(self, checked: bool) -> None:
+        """Select or deselect all currently visible rows."""
+        for row in self._rows.values():
+            if not row.isHidden():
+                row.set_selected(checked)
+        self._update_count()
+
     def _update_count(self) -> None:
         n = len(self._rows)
-        self._count_lbl.setText(f"{n} image{'s' if n != 1 else ''}")
+        selected = sum(1 for r in self._rows.values() if r.is_selected())
+        base = f"{n} image{'s' if n != 1 else ''}"
+        if selected:
+            self._count_lbl.setText(f"{base}  ·  {selected} selected")
+        else:
+            self._count_lbl.setText(base)
 
     def _apply_filter(self, query: str) -> None:
         for row in self._rows.values():
