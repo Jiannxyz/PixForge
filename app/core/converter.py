@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from threading import Lock
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -19,6 +20,8 @@ from app.models import ConversionError, ConversionOptions, ConversionResult
 from app.utils.filesystem import build_output_path
 
 logger = logging.getLogger(__name__)
+
+_OUTPUT_ALLOC_LOCK = Lock()
 
 
 def flatten_alpha(image: Image.Image, background: tuple[int, int, int]) -> Image.Image:
@@ -106,7 +109,12 @@ class ImageConverter:
             if not can_encode(output_spec.key):
                 raise ValidationError("Unsupported format")
 
-            output_path = build_output_path(source_path, options)
+            output_path: Path | None = None
+            with _OUTPUT_ALLOC_LOCK:
+                output_path = build_output_path(source_path, options)
+                if not options.overwrite:
+                    output_path.touch(exist_ok=True)
+
             warning = self._convert_file(source_path, output_path, options, output_spec)
             width, height = Image.open(output_path).size
             logger.info("Converted %s -> %s", source_path, output_path)
@@ -133,6 +141,27 @@ class ImageConverter:
             message = str(exc) or "conversion_failed"
             if isinstance(exc, UnidentifiedImageError) or "cannot identify" in message.lower():
                 message = "Invalid image"
+            if output_path and output_path.exists():
+                try:
+                    if output_path.stat().st_size == 0:
+                        output_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            return ConversionResult(
+                success=False,
+                source_path=source_path,
+                error=message,
+                output_format=options.output_format,
+            )
+        except Exception as exc:
+            logger.exception("Unexpected error converting %s", source_path)
+            message = str(exc) or "Invalid image"
+            if output_path and output_path.exists():
+                try:
+                    if output_path.stat().st_size == 0:
+                        output_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
             return ConversionResult(
                 success=False,
                 source_path=source_path,
