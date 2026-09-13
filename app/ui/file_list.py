@@ -388,33 +388,31 @@ class FileQueueWidget(QWidget):
 
     def _start_inspect(self, path: Path, row: FileQueueRow) -> None:
         from app.core.inspect import get_image_info
-        # Run on the thumbnail pool (cheap — only reads header)
-        from PySide6.QtCore import QRunnable, Slot
+        from PySide6.QtCore import QObject, QRunnable, Slot
+
+        class _InspectSignals(QObject):
+            ready = Signal(Path, object)
 
         class _InspectRunnable(QRunnable):
-            def __init__(self, p, r):
+            def __init__(self, p):
                 super().__init__()
                 self._p = p
-                self._r = r
+                self.signals = _InspectSignals()
                 self.setAutoDelete(True)
 
             @Slot()
             def run(self):
                 info = get_image_info(self._p)
                 if info:
-                    # Qt widget updates must happen on GUI thread
-                    from PySide6.QtCore import QMetaObject, Qt
-                    def _apply():
-                        self._r.set_meta(
-                            info.width, info.height,
-                            info.file_size, info.detected_format
-                        )
-                    QMetaObject.invokeMethod(
-                        self._r, _apply,  # type: ignore[arg-type]
-                        Qt.ConnectionType.QueuedConnection,
-                    )
+                    self.signals.ready.emit(self._p, info)
 
-        self._thumbnail_pool.start(_InspectRunnable(path, row))
+        runnable = _InspectRunnable(path)
+        runnable.signals.ready.connect(
+            lambda p, info, r=row: r.set_meta(
+                info.width, info.height, info.file_size, info.detected_format
+            ) if p == r.path else None
+        )
+        self._thumbnail_pool.start(runnable)
 
     # ------------------------------------------------------------------
     # Drag-and-drop (the queue itself also accepts drops)
