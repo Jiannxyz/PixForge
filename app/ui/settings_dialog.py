@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QSettings
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -28,6 +29,7 @@ from app.config import (
     DEFAULT_JPEG_QUALITY,
     DEFAULT_PNG_COMPRESSION,
     DEFAULT_WEBP_QUALITY,
+    LOGO_TRANSPARENT_PATH,
     MAX_WORKERS,
 )
 
@@ -38,6 +40,8 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{APP_NAME} Settings")
+        if LOGO_TRANSPARENT_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_TRANSPARENT_PATH)))
         self.setMinimumWidth(450)
         self._settings = QSettings(APP_ORG, APP_NAME)
         self._build_ui()

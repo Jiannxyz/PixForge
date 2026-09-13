@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import QSettings, Qt, Slot
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import APP_NAME, APP_ORG, APP_VERSION
+from app.config import APP_NAME, APP_ORG, APP_VERSION, LOGO_TRANSPARENT_PATH
 from app.formats import INPUT_EXTENSIONS
 from app.models import ConversionOptions, ConversionResult, FileStatus
 from app.ui.drop_zone import DropZone
@@ -53,6 +53,8 @@ class ErrorViewerDialog(QDialog):
     def __init__(self, errors: list[ConversionResult], parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{APP_NAME} — Conversion Errors")
+        if LOGO_TRANSPARENT_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_TRANSPARENT_PATH)))
         self.setMinimumSize(600, 360)
         self._errors = errors
         self._build_ui()
@@ -99,6 +101,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} — Offline Image Converter")
+        if LOGO_TRANSPARENT_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_TRANSPARENT_PATH)))
         self.setMinimumSize(960, 720)
         self.resize(1080, 800)
 
@@ -126,6 +130,18 @@ class MainWindow(QMainWindow):
         app_bar.setObjectName("header")
         app_bar_layout = QHBoxLayout(app_bar)
         app_bar_layout.setContentsMargins(8, 6, 8, 6)
+        app_bar_layout.setSpacing(10)
+
+        if LOGO_TRANSPARENT_PATH.exists():
+            logo_lbl = QLabel(self)
+            pix = QPixmap(str(LOGO_TRANSPARENT_PATH)).scaled(
+                36, 36,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            logo_lbl.setPixmap(pix)
+            logo_lbl.setFixedSize(36, 36)
+            app_bar_layout.addWidget(logo_lbl)
 
         title_box = QVBoxLayout()
         title_box.setSpacing(0)

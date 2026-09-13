@@ -18,7 +18,9 @@ log = get_logger("main")
 
 def run_gui() -> int:
     """Launch the PySide6 desktop GUI."""
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
+    from app.config import LOGO_TRANSPARENT_PATH
     from app.ui.main_window import MainWindow
 
     setup_logging()
@@ -26,6 +28,8 @@ def run_gui() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    if LOGO_TRANSPARENT_PATH.exists():
+        app.setWindowIcon(QIcon(str(LOGO_TRANSPARENT_PATH)))
 
     window = MainWindow()
     window.show()

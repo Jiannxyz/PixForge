@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 APP_NAME = "PixForge"
 APP_VERSION = "1.0.0"
 APP_ORG = "PixForge"
+
+BASE_DIR = Path(__file__).resolve().parent
+RESOURCES_DIR = BASE_DIR / "resources"
+ICONS_DIR = RESOURCES_DIR / "icons"
+LOGO_TRANSPARENT_PATH = ICONS_DIR / "PixForgeLogoTransparent.png"
+LOGO_BACKGROUND_PATH = ICONS_DIR / "PixForgeLogoWithBackground.png"
 
 # Worker thread count for batch conversion
 MAX_WORKERS: int = min(4, os.cpu_count() or 2)
