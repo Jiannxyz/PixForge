@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
-    QSize, Qt, QThreadPool, Signal,
+    QObject, QRunnable, QSize, Qt, QThreadPool, Signal, Slot,
 )
 from PySide6.QtGui import (
     QDragEnterEvent, QDropEvent, QPixmap,
@@ -27,6 +27,34 @@ from app.workers.thumbnail_worker import PreviewRunnable
 log = logging.getLogger(__name__)
 
 THUMBNAIL_SIZE = 64
+
+
+# ---------------------------------------------------------------------------
+# Inspect worker signals — defined at module level to avoid redefinition churn
+# ---------------------------------------------------------------------------
+
+class _InspectSignals(QObject):
+    """Carries the result of a background image-info inspection."""
+    ready = Signal(Path, object)  # (path, ImageInfo)
+
+
+class _InspectRunnable(QRunnable):
+    """Reads image headers on a pool thread; emits signals.ready when done."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self._p = path
+        self.signals = _InspectSignals()
+        # Do NOT use setAutoDelete(True) — Qt would delete the C++ object
+        # before the queued signal is delivered, causing a segfault.
+        self.setAutoDelete(False)
+
+    @Slot()
+    def run(self) -> None:
+        from app.core.inspect import get_image_info
+        info = get_image_info(self._p)
+        if info:
+            self.signals.ready.emit(self._p, info)
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +198,12 @@ class FileQueueWidget(QWidget):
         self._seen: set[Path] = set()
         self._thumbnail_pool = QThreadPool()
         self._thumbnail_pool.setMaxThreadCount(3)
+
+        # Keep strong Python references to runnables so their embedded
+        # signals QObjects are not garbage-collected before queued signals fire.
+        # Without this, Qt's C++ side can be alive while Python deletes the
+        # object → segfault when the queued signal is delivered.
+        self._active_runnables: List = []
 
         self._build_ui()
 
@@ -381,37 +415,45 @@ class FileQueueWidget(QWidget):
 
     def _start_thumbnail(self, path: Path, row: FileQueueRow) -> None:
         runnable = PreviewRunnable(path, THUMBNAIL_SIZE)
-        runnable.signals.ready.connect(
-            lambda p, data, r=row: r.set_thumbnail(data) if p == r.path else None
-        )
+        # Disable autoDelete so the C++ QRunnable lives until Python GC
+        # collects our reference in _active_runnables — prevents segfaults
+        # where a queued signal fires into an already-freed C++ object.
+        runnable.setAutoDelete(False)
+        self._active_runnables.append(runnable)
+
+        def _on_thumb_ready(p: Path, data: bytes, _r=row, _run=runnable) -> None:
+            if p == _r.path:
+                _r.set_thumbnail(data)
+            # Release our reference once signal is delivered
+            try:
+                self._active_runnables.remove(_run)
+            except ValueError:
+                pass
+
+        def _on_thumb_failed(p: Path, _run=runnable) -> None:
+            try:
+                self._active_runnables.remove(_run)
+            except ValueError:
+                pass
+
+        runnable.signals.ready.connect(_on_thumb_ready)
+        runnable.signals.failed.connect(_on_thumb_failed)
         self._thumbnail_pool.start(runnable)
 
     def _start_inspect(self, path: Path, row: FileQueueRow) -> None:
-        from app.core.inspect import get_image_info
-        from PySide6.QtCore import QObject, QRunnable, Slot
+        runnable = _InspectRunnable(path)  # setAutoDelete(False) already set
+        self._active_runnables.append(runnable)
 
-        class _InspectSignals(QObject):
-            ready = Signal(Path, object)
+        def _on_inspect_ready(p: Path, info, _r=row, _run=runnable) -> None:
+            if p == _r.path:
+                _r.set_meta(info.width, info.height, info.file_size, info.detected_format)
+            # Release reference once delivered
+            try:
+                self._active_runnables.remove(_run)
+            except ValueError:
+                pass
 
-        class _InspectRunnable(QRunnable):
-            def __init__(self, p):
-                super().__init__()
-                self._p = p
-                self.signals = _InspectSignals()
-                self.setAutoDelete(True)
-
-            @Slot()
-            def run(self):
-                info = get_image_info(self._p)
-                if info:
-                    self.signals.ready.emit(self._p, info)
-
-        runnable = _InspectRunnable(path)
-        runnable.signals.ready.connect(
-            lambda p, info, r=row: r.set_meta(
-                info.width, info.height, info.file_size, info.detected_format
-            ) if p == r.path else None
-        )
+        runnable.signals.ready.connect(_on_inspect_ready)
         self._thumbnail_pool.start(runnable)
 
     # ------------------------------------------------------------------
