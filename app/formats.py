@@ -205,6 +205,11 @@ def registered_input_extensions() -> tuple[str, ...]:
     return tuple(sorted(_EXTENSION_INDEX))
 
 
+def file_dialog_filter() -> str:
+    patterns = " ".join(f"*{ext}" for ext in registered_input_extensions())
+    return f"Images ({patterns})"
+
+
 def output_format_keys() -> tuple[str, ...]:
     keys = []
     seen: set[str] = set()
