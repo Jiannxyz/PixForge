@@ -2,10 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
 import pytest
 from PIL import Image
 
-from app.models import ConversionOptions
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 @pytest.fixture

@@ -23,14 +23,6 @@ from app.workers.conversion_worker import ConversionBatchWorker
 from tests.conftest import save_rgb
 
 
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
-
-
 def test_drop_zone_widget(qapp):
     drop_zone = DropZone()
     assert drop_zone.include_subfolders is True
