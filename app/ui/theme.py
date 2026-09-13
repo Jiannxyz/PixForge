@@ -29,7 +29,6 @@ QLabel#muted {
 QLabel#section {
     font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.4px;
     color: #c5cdd8;
 }
 QFrame#dropZone {
@@ -142,6 +141,7 @@ QCheckBox::indicator {
 QCheckBox::indicator:checked {
     background: #4f7cff;
     border-color: #4f7cff;
+}
 QStatusBar {
     background: #12141a;
     color: #9aa3b2;
