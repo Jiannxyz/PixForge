@@ -20,3 +20,25 @@ def default_output_dir() -> Path:
 
 def is_windows() -> bool:
     return sys.platform.startswith("win")
+
+
+def open_folder(path: Path | str) -> bool:
+    """Open a folder in the operating system's native file explorer."""
+    import subprocess
+
+    target = Path(path).resolve()
+    if not target.exists():
+        target.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(str(target))
+            return True
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(target)])
+            return True
+        subprocess.Popen(["xdg-open", str(target)])
+        return True
+    except Exception:
+        return False
+
