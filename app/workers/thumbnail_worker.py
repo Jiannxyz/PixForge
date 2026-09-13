@@ -22,7 +22,11 @@ class PreviewRunnable(QRunnable):
         self.path = path
         self.size = size
         self.signals = _ThumbnailSignals()
-        self.setAutoDelete(True)
+        # Do NOT use setAutoDelete(True) — the C++ side would be freed before
+        # the queued signal is delivered to the main thread → segfault.
+        # FileQueueWidget._active_runnables keeps a Python reference instead.
+        self.setAutoDelete(False)
+
 
     @Slot()
     def run(self) -> None:
