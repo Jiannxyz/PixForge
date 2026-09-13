@@ -109,8 +109,8 @@ class ConversionBatchWorker(QThread):
             with self._lock:
                 self._completed_count += 1
                 count = self._completed_count
-            self.job_finished.emit(job)
-            self.progress_updated.emit(count, self._total_count)
+                self.job_finished.emit(job)
+                self.progress_updated.emit(count, self._total_count)
 
         try:
             results = self.manager.convert_batch(

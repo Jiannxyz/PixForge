@@ -28,7 +28,7 @@ class DropZone(QFrame):
 
         title = QLabel("DROP IMAGES HERE")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 16px; font-weight: 700; letter-spacing: 0.5px; color: #f4f6fb; background: transparent;")
+        title.setStyleSheet("font-size: 16px; font-weight: 700; color: #f4f6fb; background: transparent;")
         hint = MutedLabel("Drag & drop images or folders here. All conversions run locally on your device.")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("background: transparent;")

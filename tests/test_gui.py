@@ -164,7 +164,7 @@ def test_conversion_batch_worker(qapp, tmp_path: Path, tmp_output: Path):
 
     assert len(batch_results) == 2
     assert all(r.success for r in batch_results)
-    assert len(finished_jobs) == 2
+    assert len(progress_records) == 2
     assert progress_records[-1] == (2, 2)
 
 
