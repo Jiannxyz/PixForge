@@ -1,1 +1,1 @@
-"""Worker package. GUI thread integration is added in a later phase."""
+"""Qt workers that wrap the conversion engine. No conversion logic lives here."""
